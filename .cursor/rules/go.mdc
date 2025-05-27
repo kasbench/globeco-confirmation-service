@@ -1,0 +1,70 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+I'm developing a Go microservice with these key characteristics:
+
+Architecture:
+- Clean architecture principles with clear separation of concerns
+- Domain-driven design approach where applicable
+- RESTful API endpoints with JSON response format
+- Containerized deployment with Docker
+
+Project Structure:
+- cmd/ - Main application entry points
+- internal/ - Private application code
+- pkg/ - Reusable public packages  
+- api/ - API definitions and handlers
+- config/ - Configuration management
+- domain/ - Business domain models and logic
+- repository/ - Data access layer
+- service/ - Business logic implementation
+- middleware/ - HTTP middleware components
+- utils/ - Utility functions
+
+Technical Stack:
+- Go 1.21+ 
+- Chi router for HTTP routing (github.com/go-chi/chi/v5)
+- sqlx for database operations (github.com/jmoiron/sqlx)
+- zap for structured logging (go.uber.org/zap)
+- viper for configuration (github.com/spf13/viper)
+- Testify for unit testing (github.com/stretchr/testify)
+- Docker/Docker Compose for containerization
+- PostgreSQL for persistent storage
+- Redis for caching (optional)
+
+Development Practices:
+- Follow standard Go project layout
+- Use Go modules for dependency management
+- Implement comprehensive unit tests with high coverage
+- Apply error handling best practices throughout the codebase
+- Use context for request cancellation and timeouts
+- Implement graceful shutdown
+- Follow idiomatic Go coding style (gofmt, golint compliant)
+- Apply concurrent programming patterns where appropriate
+- Use environment-based configuration
+
+API Design:
+- RESTful resource naming conventions
+- Consistent error response format
+- Structured logging for all requests
+- Proper status codes and headers
+- Implemented health check endpoints
+- API versioning strategy
+- Request validation using Go structs
+
+Observability:
+- Structured logging for all operations
+- Prometheus metrics integration
+- Distributed tracing (OpenTelemetry)
+- Health check and readiness endpoints
+
+Security:
+- Input validation on all endpoints
+- CORS configuration
+
+Deployment:
+- Multi-stage Docker builds for minimal image size
+- Kubernetes deployment manifests
+- CI/CD pipeline integration

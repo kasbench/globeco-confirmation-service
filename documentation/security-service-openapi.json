@@ -1,0 +1,634 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+      "title": "GlobeCo Security Service",
+      "version": "1.0.0"
+    },
+    "paths": {
+      "/api/v1/securityTypes": {
+        "get": {
+          "summary": "Get Security Types",
+          "operationId": "get_security_types_api_v1_securityTypes_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "items": {
+                      "$ref": "#/components/schemas/SecurityTypeOut"
+                    },
+                    "type": "array",
+                    "title": "Response Get Security Types Api V1 Securitytypes Get"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "post": {
+          "summary": "Create Security Type",
+          "operationId": "create_security_type_api_v1_securityTypes_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityTypeIn"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "201": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SecurityTypeOut"
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/securityType/{securityTypeId}": {
+        "get": {
+          "summary": "Get Security Type",
+          "operationId": "get_security_type_api_v1_securityType__securityTypeId__get",
+          "parameters": [
+            {
+              "name": "securityTypeId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "title": "Securitytypeid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SecurityTypeOut"
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "put": {
+          "summary": "Update Security Type",
+          "operationId": "update_security_type_api_v1_securityType__securityTypeId__put",
+          "parameters": [
+            {
+              "name": "securityTypeId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "title": "Securitytypeid"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityTypeIn"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SecurityTypeOut"
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "delete": {
+          "summary": "Delete Security Type",
+          "operationId": "delete_security_type_api_v1_securityType__securityTypeId__delete",
+          "parameters": [
+            {
+              "name": "securityTypeId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "title": "Securitytypeid"
+              }
+            },
+            {
+              "name": "version",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "title": "Version"
+              }
+            }
+          ],
+          "responses": {
+            "204": {
+              "description": "Successful Response"
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/securities": {
+        "get": {
+          "summary": "Get Securities",
+          "operationId": "get_securities_api_v1_securities_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "items": {
+                      "$ref": "#/components/schemas/SecurityOut"
+                    },
+                    "type": "array",
+                    "title": "Response Get Securities Api V1 Securities Get"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "post": {
+          "summary": "Create Security",
+          "operationId": "create_security_api_v1_securities_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityIn"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "201": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SecurityOut"
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/security/{securityId}": {
+        "get": {
+          "summary": "Get Security",
+          "operationId": "get_security_api_v1_security__securityId__get",
+          "parameters": [
+            {
+              "name": "securityId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "title": "Securityid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SecurityOut"
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "put": {
+          "summary": "Update Security",
+          "operationId": "update_security_api_v1_security__securityId__put",
+          "parameters": [
+            {
+              "name": "securityId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "title": "Securityid"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityIn"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SecurityOut"
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "delete": {
+          "summary": "Delete Security",
+          "operationId": "delete_security_api_v1_security__securityId__delete",
+          "parameters": [
+            {
+              "name": "securityId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "title": "Securityid"
+              }
+            },
+            {
+              "name": "version",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "title": "Version"
+              }
+            }
+          ],
+          "responses": {
+            "204": {
+              "description": "Successful Response"
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/health/liveness": {
+        "get": {
+          "summary": "Liveness",
+          "operationId": "liveness_health_liveness_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/health/readiness": {
+        "get": {
+          "summary": "Readiness",
+          "operationId": "readiness_health_readiness_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/health/startup": {
+        "get": {
+          "summary": "Startup",
+          "operationId": "startup_health_startup_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "type": "array",
+              "title": "Detail"
+            }
+          },
+          "type": "object",
+          "title": "HTTPValidationError"
+        },
+        "SecurityIn": {
+          "properties": {
+            "ticker": {
+              "type": "string",
+              "maxLength": 50,
+              "minLength": 1,
+              "title": "Ticker"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Description"
+            },
+            "securityTypeId": {
+              "type": "string",
+              "title": "Securitytypeid"
+            },
+            "version": {
+              "type": "integer",
+              "title": "Version",
+              "default": 1
+            }
+          },
+          "type": "object",
+          "required": [
+            "ticker",
+            "description",
+            "securityTypeId"
+          ],
+          "title": "SecurityIn"
+        },
+        "SecurityOut": {
+          "properties": {
+            "ticker": {
+              "type": "string",
+              "maxLength": 50,
+              "minLength": 1,
+              "title": "Ticker"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Description"
+            },
+            "securityTypeId": {
+              "type": "string",
+              "title": "Securitytypeid"
+            },
+            "version": {
+              "type": "integer",
+              "title": "Version",
+              "default": 1
+            },
+            "securityId": {
+              "type": "string",
+              "title": "Securityid"
+            },
+            "securityType": {
+              "$ref": "#/components/schemas/SecurityTypeNested"
+            }
+          },
+          "type": "object",
+          "required": [
+            "ticker",
+            "description",
+            "securityTypeId",
+            "securityId",
+            "securityType"
+          ],
+          "title": "SecurityOut"
+        },
+        "SecurityTypeIn": {
+          "properties": {
+            "abbreviation": {
+              "type": "string",
+              "maxLength": 10,
+              "minLength": 1,
+              "title": "Abbreviation"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Description"
+            },
+            "version": {
+              "type": "integer",
+              "title": "Version",
+              "default": 1
+            }
+          },
+          "type": "object",
+          "required": [
+            "abbreviation",
+            "description"
+          ],
+          "title": "SecurityTypeIn"
+        },
+        "SecurityTypeNested": {
+          "properties": {
+            "securityTypeId": {
+              "type": "string",
+              "title": "Securitytypeid"
+            },
+            "abbreviation": {
+              "type": "string",
+              "title": "Abbreviation"
+            },
+            "description": {
+              "type": "string",
+              "title": "Description"
+            }
+          },
+          "type": "object",
+          "required": [
+            "securityTypeId",
+            "abbreviation",
+            "description"
+          ],
+          "title": "SecurityTypeNested"
+        },
+        "SecurityTypeOut": {
+          "properties": {
+            "abbreviation": {
+              "type": "string",
+              "maxLength": 10,
+              "minLength": 1,
+              "title": "Abbreviation"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Description"
+            },
+            "version": {
+              "type": "integer",
+              "title": "Version",
+              "default": 1
+            },
+            "securityTypeId": {
+              "type": "string",
+              "title": "Securitytypeid"
+            }
+          },
+          "type": "object",
+          "required": [
+            "abbreviation",
+            "description",
+            "securityTypeId"
+          ],
+          "title": "SecurityTypeOut"
+        },
+        "ValidationError": {
+          "properties": {
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "type": "array",
+              "title": "Location"
+            },
+            "msg": {
+              "type": "string",
+              "title": "Message"
+            },
+            "type": {
+              "type": "string",
+              "title": "Error Type"
+            }
+          },
+          "type": "object",
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError"
+        }
+      }
+    }
+  }

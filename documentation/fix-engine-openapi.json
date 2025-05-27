@@ -1,0 +1,83 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GlobeCo FIX Engine API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/executions": {
+      "get": {
+        "summary": "List all executions",
+        "responses": {
+          "200": {
+            "description": "A list of executions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ExecutionDTO" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/execution/{id}": {
+      "get": {
+        "summary": "Get an execution by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExecutionDTO" }
+              }
+            }
+          },
+          "404": {
+            "description": "Execution not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ExecutionDTO": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "orderId": { "type": "integer" },
+          "isOpen": { "type": "boolean" },
+          "executionStatus": { "type": "string" },
+          "tradeType": { "type": "string" },
+          "destination": { "type": "string" },
+          "securityId": { "type": "string" },
+          "ticker": { "type": "string" },
+          "quantity": { "type": "number" },
+          "limitPrice": { "type": "number", "nullable": true },
+          "receivedTimestamp": { "type": "string", "format": "date-time" },
+          "sentTimestamp": { "type": "string", "format": "date-time" },
+          "lastFilledTimestamp": { "type": "string", "format": "date-time", "nullable": true },
+          "quantityFilled": { "type": "number" },
+          "averagePrice": { "type": "number", "nullable": true },
+          "numberOfFills": { "type": "integer" },
+          "totalAmount": { "type": "number" },
+          "version": { "type": "integer" }
+        },
+        "required": [
+          "id", "orderId", "isOpen", "executionStatus", "tradeType", "destination", "securityId", "ticker", "quantity", "receivedTimestamp", "sentTimestamp", "quantityFilled", "numberOfFills", "totalAmount", "version"
+        ]
+      }
+    }
+  }
+} 

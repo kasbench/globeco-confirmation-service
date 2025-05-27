@@ -1,0 +1,235 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OpenAPI definition",
+    "version": "v0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8084",
+      "description": "Generated server url"
+    }
+  ],
+  "paths": {
+    "/api/v1/execution/{id}": {
+      "get": {
+        "tags": [
+          "execution-controller"
+        ],
+        "operationId": "getExecutionById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionDTO"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "execution-controller"
+        ],
+        "operationId": "updateExecution",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionPutDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/executions": {
+      "get": {
+        "tags": [
+          "execution-controller"
+        ],
+        "operationId": "getAllExecutions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExecutionDTO"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "execution-controller"
+        ],
+        "operationId": "createExecution",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionPostDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ExecutionPutDTO": {
+        "type": "object",
+        "properties": {
+          "quantityFilled": {
+            "type": "number"
+          },
+          "averagePrice": {
+            "type": "number"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ExecutionDTO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "executionStatus": {
+            "type": "string"
+          },
+          "tradeType": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "securityId": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "limitPrice": {
+            "type": "number"
+          },
+          "receivedTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tradeServiceExecutionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "quantityFilled": {
+            "type": "number"
+          },
+          "averagePrice": {
+            "type": "number"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ExecutionPostDTO": {
+        "type": "object",
+        "properties": {
+          "executionStatus": {
+            "type": "string"
+          },
+          "tradeType": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "securityId": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "limitPrice": {
+            "type": "number"
+          },
+          "tradeServiceExecutionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Logging
+* Log every request that you receive that requires an action on your part.  Log requests in @cursor-log.md in the root of the project.
+* Remember to never delete or replace an existing entry.  Add new entries to the end, leaving a blank line between entries.  
