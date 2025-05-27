@@ -20,7 +20,7 @@ This microservice is part of the GlobeCo suite of applications for benchmarking 
 
 | Technology | Version | Notes |
 |---------------------------|----------------|---------------------------------------|
-| Go | 23.4 | |
+| Go | 1.23.4 | |
 | Kafka | 4.0.0 | |
 ---
 
@@ -149,74 +149,168 @@ The Comfirmation microservice performs the following in a continuous loop.
    | version | version from the previous step |
     ---
 
+## Error Handling Requirements
+
+- **Retry Strategy**: Failed Execution Service calls must be retried up to 3 times with exponential backoff (initial delay: 100ms, max delay: 5s)
+- **Circuit Breaker**: Implement circuit breaker pattern for Execution Service calls (failure threshold: 5 consecutive failures, timeout: 30s)
+- **Dead Letter Queue**: Messages that fail after all retries should be sent to a dead letter queue for manual investigation
+- **Timeout Configuration**: 
+  - Kafka consumer timeout: 30s
+  - Execution Service API timeout: 10s
+- **Error Logging**: All errors must be logged with correlation IDs for traceability
+- **Graceful Degradation**: Service should continue processing other messages even if some fail
+
+## Performance Requirements
+
+- **Throughput**: Process minimum 1,000 messages per second under normal load
+- **Response Time**: Execution Service API calls must complete within 100ms (95th percentile)
+- **Concurrency**: Maximum 10 concurrent Execution Service API calls to prevent overwhelming the downstream service
+- **Memory Usage**: Service should not exceed 512MB memory usage under normal load
+- **CPU Usage**: Service should not exceed 500m CPU under normal load
+
+## Message Validation Requirements
+
+- **Required Fields**: Validate presence of all required fields in Kafka messages:
+  - `executionServiceId` (must be positive integer)
+  - `quantityFilled` (must be non-negative number)
+  - `averagePrice` (must be positive number)
+  - `version` (must be non-negative integer)
+- **Data Types**: Ensure all numeric fields are valid numbers
+- **Business Rules**: 
+  - `quantityFilled` should not exceed original `quantity`
+  - `averagePrice` should be reasonable (> 0 and < 10000)
+- **Schema Validation**: Reject malformed JSON messages
+- **Duplicate Detection**: Log duplicate message IDs but process them (idempotent operations)
+
+## Health Check Requirements
+
+- **Liveness Probe**: `/health/live` endpoint that returns 200 OK if service is running
+- **Readiness Probe**: `/health/ready` endpoint that returns:
+  - 200 OK if service can connect to Kafka and Execution Service
+  - 503 Service Unavailable if dependencies are unreachable
+- **Health Check Frequency**: Kubernetes probes should check every 10 seconds
+- **Startup Grace Period**: Allow 30 seconds for service startup before health checks
+
+## Logging Requirements
+
+- **Structured Logging**: Use JSON format with consistent field names
+- **Required Fields**: Every log entry must include:
+  - `timestamp` (ISO 8601 format)
+  - `level` (DEBUG, INFO, WARN, ERROR)
+  - `service` ("confirmation-service")
+  - `correlationId` (for request tracing)
+  - `message` (human-readable description)
+- **Request Logging**: Log every Kafka message received and API call made
+- **Performance Logging**: Log processing time for each message
+- **Error Context**: Include full error details and stack traces for debugging
+
 ### Other requirements
 
-- OpenTelemetry instrumentation
+- OpenTelemetry instrumentation with trace propagation to Execution Service
+- Prometheus metrics for message processing rates, error rates, and API response times
 
 
 
 ## Execution Plan    
 
-Teh plan should be similar to the following plan from another GlobeCo project:
-
+The plan should be similar to the following plan from another GlobeCo project:
 
 1. **Project Initialization and Repository Setup**
-   - Initialize a new Go module and set up the project directory structure according to clean architecture principles.
- 
-   - Set up Go module dependencies (chi, sqlx, zap, viper, testify, etc.).
+   - Initialize a new Go module and set up the project directory structure according to clean architecture principles
+   - Create directory structure: `cmd/`, `internal/`, `pkg/`, `api/`, `config/`, `domain/`, `repository/`, `service/`, `middleware/`, `utils/`
+   - Set up Go module dependencies (chi, sqlx, zap, viper, testify, kafka-go, etc.)
+   - Initialize git repository and basic project files
 
-2. **Configuration Management**
-   - Implement configuration loading using Viper (supporting environment variables and config files).
-   - Define configuration structs for Kafka, PostgreSQL, external services, and app settings.
+2. **Domain Models and DTOs**
+   - Define Go structs for Kafka fill messages
+   - Define DTOs for Execution Service API requests/responses
+   - Create domain models for internal business logic
+   - Add JSON tags and validation annotations
 
-3. **Logging and Observability Foundation**
-   - Integrate zap for structured logging.
-   - Set up Prometheus metrics endpoint and basic application metrics.
-   - Integrate OpenTelemetry for distributed tracing (initial setup).
+3. **Configuration Management**
+   - Implement configuration loading using Viper (supporting environment variables and config files)
+   - Define configuration structs for Kafka, Execution Service, timeouts, retry policies, and app settings
+   - Add configuration validation and default values
+   - Support for different environments (dev, staging, prod)
 
+4. **Logging and Observability Foundation**
+   - Integrate zap for structured logging with required fields (timestamp, level, service, correlationId, message)
+   - Set up Prometheus metrics endpoint and application metrics (message processing rates, error rates, API response times)
+   - Integrate OpenTelemetry for distributed tracing with trace propagation
+   - Implement correlation ID generation and propagation
 
-4. **Domain Models and DTOs**
-   - Define Go structs for  DTOs 
+5. **Error Handling and Resilience Strategy**
+   - Implement retry mechanism with exponential backoff for Execution Service calls
+   - Add circuit breaker pattern for external service calls
+   - Create dead letter queue handling for failed messages
+   - Define timeout configurations and error classification
+   - Implement graceful error recovery and logging
 
-5. **Kafka Integration**
-   - Set up Kafka consumer for the `fills` topic.
-   - Configure consumer group and error handling.
+6. **External Integrations**
+   - **Kafka Consumer**: Set up Kafka consumer for the `fills` topic with consumer group configuration
+   - **Execution Service Client**: Implement HTTP client for Execution Service with timeout, retry, and circuit breaker
+   - Add connection health checks and monitoring
+   - Implement message deserialization and API request/response handling
 
-6. **External Service Integration**
-   - Implement client for the Execution Service with 
-
-7. **Business Logic: Service Layer**
-
+7. **Business Logic and Validation**
+   - Implement core message processing logic (consume → validate → get version → update execution)
+   - Add comprehensive input validation for Kafka messages
+   - Implement business rule validation (quantity limits, price ranges, etc.)
+   - Add duplicate detection and idempotent processing
+   - Ensure proper error handling and logging throughout
 
 8. **REST API Implementation**
+   - Add health check endpoints (`/health/live`, `/health/ready`) with dependency checks
+   - Implement metrics endpoint (`/metrics`) for Prometheus
+   - Add any additional operational endpoints as needed
+   - Ensure proper HTTP status codes and error responses
 
-   - Add health and readiness endpoints for Kubernetes.
-   
 9. **Middleware and Utilities**
-    - Implement HTTP middleware for logging, request tracing, and CORS.
-    - Add utility functions as needed (e.g., random fill logic, time calculations).
+   - Implement HTTP middleware for logging, request tracing, CORS, and metrics collection
+   - Add utility functions for correlation ID handling, time calculations, and data transformations
+   - Implement request/response logging with performance metrics
 
-10. **Testing**
-    - Write unit tests for service and API layers using testify.
-    - Add integration tests for Kafka and database interactions.
-    - Ensure high test coverage and test for edge cases.
+10. **Unit Testing**
+    - Write comprehensive unit tests for service and API layers using testify
+    - Mock external dependencies (Kafka, Execution Service)
+    - Test error scenarios, edge cases, and validation logic
+    - Ensure high test coverage (>80%) and test for all business rules
 
-11. **Graceful Shutdown and Robustness**
-    - Implement context-based cancellation and graceful shutdown for all components.
-    - Ensure proper error handling and retries for transient failures.
+11. **Integration Testing**
+    - Add integration tests using testcontainers for Kafka
+    - Test end-to-end message processing flow
+    - Test error handling and retry scenarios
+    - Validate health check endpoints and metrics collection
 
-12. **Containerization and Deployment**
-    - Write a multi-stage Dockerfile for minimal image size.
-    - Add Docker Compose for local development and integration testing.
-    - Prepare Kubernetes manifests for deployment (Deployment, Service, ConfigMap, Secret, etc.).
-    - Configure readiness and liveness probes.
+12. **Performance Testing**
+    - Load test message processing to validate throughput requirements (1000 msg/sec)
+    - Test concurrent processing limits and resource usage
+    - Validate API response time requirements (100ms 95th percentile)
+    - Test memory and CPU usage under load
 
-13. **CI/CD Integration**
-    - Set up CI pipeline for linting, testing, and building Docker images.
-    - Add CD steps for deployment to Kubernetes (if applicable).
+13. **Graceful Shutdown and Robustness**
+    - Implement context-based cancellation and graceful shutdown for all components
+    - Ensure proper cleanup of Kafka consumers and HTTP connections
+    - Add signal handling for container orchestration
+    - Test startup and shutdown procedures
 
-14. **Documentation**
-    - Document API endpoints, configuration, and operational procedures.
-    - Update architecture and requirements documentation as needed.
+14. **Containerization and Deployment**
+    - Write multi-stage Dockerfile for minimal image size and security
+    - Add Docker Compose for local development and integration testing
+    - Prepare Kubernetes manifests (Deployment, Service, ConfigMap, Secret, HPA)
+    - Configure readiness and liveness probes with proper timeouts
+    - Add resource limits and requests based on performance testing
+
+15. **CI/CD Integration**
+    - Set up CI pipeline for linting (golangci-lint), testing, and security scanning
+    - Add automated testing with coverage reporting
+    - Build and push Docker images with proper tagging
+    - Add CD steps for deployment to Kubernetes environments
+
+16. **Documentation and Operations**
+    - Document API endpoints, configuration options, and operational procedures
+    - Create runbooks for common operational tasks and troubleshooting
+    - Update architecture and requirements documentation
+    - Add monitoring and alerting recommendations
 
 ---
