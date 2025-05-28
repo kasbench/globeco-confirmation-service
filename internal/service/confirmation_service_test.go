@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper function to create float64 pointer
+func float64Ptr(f float64) *float64 {
+	return &f
+}
+
 // MockExecutionServiceClient is a mock implementation of ExecutionServiceClientInterface
 type MockExecutionServiceClient struct {
 	mock.Mock
@@ -140,7 +145,7 @@ func TestConfirmationService_HandleFillMessage_Success(t *testing.T) {
 		SecurityID:      "SEC123",
 		Quantity:        1000,
 		QuantityFilled:  500,
-		AveragePrice:    190.0,
+		AveragePrice:    float64Ptr(190.0),
 		Version:         2,
 	}
 
@@ -277,7 +282,7 @@ func TestConfirmationService_HandleFillMessage_ValidationError(t *testing.T) {
 		SecurityID:      "SEC123",
 		Quantity:        1000,
 		QuantityFilled:  500,
-		AveragePrice:    190.0,
+		AveragePrice:    float64Ptr(190.0),
 		Version:         2,
 	}
 

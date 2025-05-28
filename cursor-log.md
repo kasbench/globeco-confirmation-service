@@ -1,5 +1,26 @@
 # Cursor Log
 
+## 2025-05-28 - Initial Project Setup and Implementation
+- Reviewed and enhanced requirements.md with comprehensive error handling, performance requirements, and validation rules
+- Implemented complete clean architecture structure with domain models, services, and utilities
+- Created comprehensive test coverage for all components
+- Fixed Docker build configuration and service startup issues
+- Implemented Kafka consumer with proper logging and error handling
+
+## 2025-05-28 - JSON Parsing Fix for Scientific Notation and Null Values
+- **Issue**: Service was failing to parse JSON responses from execution service due to scientific notation (0E-8) and null values for averagePrice field
+- **Root Cause**: Standard JSON unmarshaling couldn't handle scientific notation for int64 fields and null values for float64 fields
+- **Solution**: 
+  - Added custom JSON unmarshaling for ExecutionResponse struct
+  - Created parseToInt64() and parseToFloat64() helper functions to handle scientific notation
+  - Changed AveragePrice field from float64 to *float64 to handle null values
+  - Added comprehensive test coverage for various JSON formats including scientific notation
+- **Files Modified**:
+  - internal/domain/execution.go: Added custom UnmarshalJSON method and helper functions
+  - internal/domain/execution_test.go: Added tests for JSON parsing edge cases
+  - internal/service/confirmation_service_test.go: Updated tests to use pointer values for AveragePrice
+- **Result**: Service now successfully parses execution service responses with scientific notation and null values
+
 Request: Review requirements.md for clarity, actionability, and execution plan structure
 Date: 2025-01-27
 Action: Analyzing requirements document and providing feedback on clarity, completeness, and plan optimization
