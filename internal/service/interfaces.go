@@ -24,7 +24,7 @@ type ResilienceManagerInterface interface {
 // KafkaConsumerInterface defines the interface for the Kafka consumer
 type KafkaConsumerInterface interface {
 	Start(ctx context.Context) error
-	Stop() error
+	Stop(ctx context.Context) error
 	IsHealthy(ctx context.Context) bool
 	GetStats() map[string]interface{}
 }

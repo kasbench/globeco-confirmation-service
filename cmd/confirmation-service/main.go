@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/kasbench/globeco-confirmation-service/internal/api"
 	"github.com/kasbench/globeco-confirmation-service/internal/config"
+	"github.com/kasbench/globeco-confirmation-service/internal/service"
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
@@ -79,7 +82,6 @@ func main() {
 			zap.Any("health", cfg.Health),
 		)
 	}
-	defer cancel()
 
 	// Setup signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -91,14 +93,103 @@ func main() {
 		cancel()
 	}()
 
-	// TODO: Initialize Kafka consumer with cfg.Kafka
-	// TODO: Initialize Execution Service client with cfg.ExecutionService
-	// TODO: Initialize HTTP server for health checks with cfg.HTTP
-	// TODO: Start message processing with cfg.Performance settings
+	// Initialize resilience manager
+	resilienceManager := utils.NewResilienceManager(utils.ResilienceConfig{
+		RetryConfig: utils.RetryConfig{
+			InitialDelay:  cfg.ExecutionService.RetryBackoff,
+			MaxDelay:      5 * time.Second,
+			BackoffFactor: 2.0,
+		},
+		CircuitBreakerConfig: utils.CircuitBreakerConfig{
+			FailureThreshold: cfg.ExecutionService.CircuitBreaker.FailureThreshold,
+			Timeout:          cfg.ExecutionService.CircuitBreaker.Timeout,
+		},
+		DeadLetterQueueConfig: utils.DeadLetterQueueConfig{
+			MaxSize: 1000,
+		},
+		TimeoutConfig: utils.TimeoutConfig{
+			ExecutionServiceTimeout: cfg.ExecutionService.Timeout,
+			KafkaConsumerTimeout:    cfg.Kafka.ConsumerTimeout,
+			DefaultOperationTimeout: 5 * time.Second,
+		},
+	}, appLogger, appMetrics)
 
-	// Use the initialized components (to avoid unused variable warnings)
-	_ = appMetrics
-	_ = tracingProvider
+	// Initialize Execution Service client
+	executionClient := service.NewExecutionServiceClient(service.ExecutionServiceClientConfig{
+		ExecutionService:  cfg.ExecutionService,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: resilienceManager,
+		TracingProvider:   tracingProvider,
+	})
+
+	// Initialize validation service
+	validationService := service.NewValidationService(service.ValidationConfig{
+		Logger: appLogger,
+	})
+
+	// Initialize duplicate detection service
+	duplicateDetection := service.NewDuplicateDetectionService(service.DuplicateDetectionConfig{
+		Logger:          appLogger,
+		RetentionPeriod: 24 * time.Hour,
+		MaxEntries:      10000,
+	})
+
+	// Initialize confirmation service (message handler)
+	confirmationService := service.NewConfirmationService(service.ConfirmationServiceConfig{
+		ExecutionClient:    executionClient,
+		Logger:             appLogger,
+		Metrics:            appMetrics,
+		ResilienceManager:  resilienceManager,
+		TracingProvider:    tracingProvider,
+		ValidationService:  validationService,
+		DuplicateDetection: duplicateDetection,
+	})
+
+	// Initialize Kafka consumer
+	kafkaConsumer := service.NewKafkaConsumerService(service.KafkaConsumerConfig{
+		Kafka:             cfg.Kafka,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: resilienceManager,
+		TracingProvider:   tracingProvider,
+		MessageHandler:    confirmationService,
+	})
+
+	// Initialize HTTP server for health checks and metrics
+	httpHandler := api.NewHandlers(api.HandlerConfig{
+		ConfirmationService: confirmationService,
+		KafkaConsumer:       kafkaConsumer,
+		Logger:              appLogger,
+		Metrics:             appMetrics,
+	})
+
+	router := api.NewRouter(api.RouterConfig{
+		Handlers: httpHandler,
+		Logger:   appLogger,
+		Metrics:  appMetrics,
+	})
+	httpServer := &http.Server{
+		Addr:         cfg.GetHTTPAddress(),
+		Handler:      router,
+		ReadTimeout:  cfg.HTTP.ReadTimeout,
+		WriteTimeout: cfg.HTTP.WriteTimeout,
+		IdleTimeout:  cfg.HTTP.IdleTimeout,
+	}
+
+	// Start HTTP server
+	go func() {
+		appLogger.WithContext(ctx).Info("Starting HTTP server", zap.String("address", cfg.GetHTTPAddress()))
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			appLogger.WithContext(ctx).Error("HTTP server failed", zap.Error(err))
+			cancel()
+		}
+	}()
+
+	// Start Kafka consumer
+	if err := kafkaConsumer.Start(ctx); err != nil {
+		appLogger.WithContext(ctx).Fatal("Failed to start Kafka consumer", zap.Error(err))
+	}
 
 	appLogger.WithContext(ctx).Info("Service started successfully",
 		zap.Duration("startup_grace_period", cfg.Health.StartupGracePeriod),
@@ -109,14 +200,26 @@ func main() {
 
 	appLogger.WithContext(ctx).Info("Shutting down service...")
 
-	// TODO: Implement graceful shutdown
+	// Implement graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	// TODO: Stop Kafka consumer
-	// TODO: Stop HTTP server
-	// TODO: Close database connections
-	// TODO: Shutdown tracing provider
+	// Stop Kafka consumer
+	if err := kafkaConsumer.Stop(shutdownCtx); err != nil {
+		appLogger.WithContext(shutdownCtx).Error("Error stopping Kafka consumer", zap.Error(err))
+	}
+
+	// Stop HTTP server
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		appLogger.WithContext(shutdownCtx).Error("Error stopping HTTP server", zap.Error(err))
+	}
+
+	// Shutdown tracing provider
+	if tracingProvider != nil {
+		if err := tracingProvider.Shutdown(shutdownCtx); err != nil {
+			appLogger.WithContext(shutdownCtx).Error("Error shutting down tracing provider", zap.Error(err))
+		}
+	}
 
 	select {
 	case <-shutdownCtx.Done():
