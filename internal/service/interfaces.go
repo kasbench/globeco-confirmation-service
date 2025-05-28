@@ -21,6 +21,14 @@ type ResilienceManagerInterface interface {
 	GetDeadLetterQueueStats() utils.DeadLetterQueueStats
 }
 
+// KafkaConsumerInterface defines the interface for the Kafka consumer
+type KafkaConsumerInterface interface {
+	Start(ctx context.Context) error
+	Stop() error
+	IsHealthy(ctx context.Context) bool
+	GetStats() map[string]interface{}
+}
+
 // Ensure our concrete types implement the interfaces
 var _ ExecutionServiceClientInterface = (*ExecutionServiceClient)(nil)
 var _ ResilienceManagerInterface = (*utils.ResilienceManager)(nil)

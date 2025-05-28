@@ -268,6 +268,12 @@ func (m *Metrics) RecordHealthCheckDuration(checkName string, duration time.Dura
 	}
 }
 
+// RecordHealthCheck records both health check status and duration
+func (m *Metrics) RecordHealthCheck(checkName string, healthy bool, duration time.Duration) {
+	m.SetHealthCheckStatus(checkName, healthy)
+	m.RecordHealthCheckDuration(checkName, duration)
+}
+
 // SetActiveGoroutines sets the number of active goroutines
 func (m *Metrics) SetActiveGoroutines(count float64) {
 	if m.ActiveGoroutines != nil {

@@ -28,7 +28,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: kasbench/globeco-fix-engine
+          images: kasbench/globeco-confirmation-service
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -38,8 +38,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            kasbench/globeco-fix-engine:latest
-            kasbench/globeco-fix-engine:${{ github.sha }}
+            kasbench/globeco-confirmation-service:latest
+            kasbench/globeco-confirmation-service:${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=kasbench/globeco-fix-engine:buildcache
-          cache-to: type=registry,ref=kasbench/globeco-fix-engine:buildcache,mode=max 
+          cache-from: type=registry,ref=kasbench/globeco-confirmation-service:buildcache
+          cache-to: type=registry,ref=kasbench/globeco-confirmation-service:buildcache,mode=max 
