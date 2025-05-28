@@ -135,8 +135,65 @@ type ExecutionUpdateResponse struct {
 	SentTimestamp           time.Time `json:"sentTimestamp"`
 	TradeServiceExecutionID int64     `json:"tradeServiceExecutionId"`
 	QuantityFilled          int64     `json:"quantityFilled"`
-	AveragePrice            float64   `json:"averagePrice"`
+	AveragePrice            *float64  `json:"averagePrice"`
 	Version                 int       `json:"version"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for ExecutionUpdateResponse
+func (e *ExecutionUpdateResponse) UnmarshalJSON(data []byte) error {
+	// Define a temporary struct with string fields for problematic numeric fields
+	type Alias ExecutionUpdateResponse
+	aux := &struct {
+		Quantity       interface{} `json:"quantity"`
+		LimitPrice     interface{} `json:"limitPrice"`
+		QuantityFilled interface{} `json:"quantityFilled"`
+		AveragePrice   interface{} `json:"averagePrice"`
+		*Alias
+	}{
+		Alias: (*Alias)(e),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Parse Quantity (handle both int, float, and scientific notation)
+	if aux.Quantity != nil {
+		if val, err := parseToInt64(aux.Quantity); err == nil {
+			e.Quantity = val
+		}
+	}
+
+	// Parse LimitPrice (handle scientific notation and null)
+	if aux.LimitPrice != nil {
+		if val, err := parseToFloat64(aux.LimitPrice); err == nil {
+			e.LimitPrice = val
+		}
+	}
+
+	// Parse QuantityFilled (handle scientific notation)
+	if aux.QuantityFilled != nil {
+		if val, err := parseToInt64(aux.QuantityFilled); err == nil {
+			e.QuantityFilled = val
+		}
+	}
+
+	// Parse AveragePrice (handle null and scientific notation)
+	if aux.AveragePrice != nil {
+		if val, err := parseToFloat64(aux.AveragePrice); err == nil {
+			e.AveragePrice = &val
+		}
+	}
+
+	return nil
+}
+
+// GetAveragePrice returns the average price value, handling null case
+func (e *ExecutionUpdateResponse) GetAveragePrice() float64 {
+	if e.AveragePrice == nil {
+		return 0.0
+	}
+	return *e.AveragePrice
 }
 
 // Execution represents the internal domain model for an execution

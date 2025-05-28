@@ -227,7 +227,7 @@ func TestValidationService_ValidateFillMessage_BusinessRules(t *testing.T) {
 				AveragePrice:       190.41,
 				Version:            1,
 			},
-			expectedError: "executionStatus 'INVALID' is not valid. Must be one of: PENDING, PARTIAL, FULL, CANCELLED",
+			expectedError: "executionStatus 'INVALID' is not valid. Must be one of: NEW, SENT, WORK, PART, FULL, HOLD, CNCL, CNCLD, CPART, DEL",
 			isWarning:     false,
 		},
 		{

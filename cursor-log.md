@@ -10,16 +10,24 @@
 ## 2025-05-28 - JSON Parsing Fix for Scientific Notation and Null Values
 - **Issue**: Service was failing to parse JSON responses from execution service due to scientific notation (0E-8) and null values for averagePrice field
 - **Root Cause**: Standard JSON unmarshaling couldn't handle scientific notation for int64 fields and null values for float64 fields
+- **Solution**: Added custom JSON unmarshaling for ExecutionResponse struct with helper functions parseToInt64() and parseToFloat64()
+- **Changes**: Modified AveragePrice field to *float64 pointer type to handle null values properly
+- **Testing**: Added comprehensive tests for scientific notation parsing and null value handling
+- **Result**: Service now successfully processes execution service responses with scientific notation and null values
+
+## 2025-05-28 - PUT Response JSON Parsing Fix
+- **Issue**: PUT requests to execution service were failing with 500 status code due to JSON parsing errors in ExecutionUpdateResponse
+- **Root Cause**: ExecutionUpdateResponse struct didn't have custom JSON unmarshaling like ExecutionResponse, causing same scientific notation and null value issues
 - **Solution**: 
-  - Added custom JSON unmarshaling for ExecutionResponse struct
-  - Created parseToInt64() and parseToFloat64() helper functions to handle scientific notation
-  - Changed AveragePrice field from float64 to *float64 to handle null values
-  - Added comprehensive test coverage for various JSON formats including scientific notation
-- **Files Modified**:
-  - internal/domain/execution.go: Added custom UnmarshalJSON method and helper functions
-  - internal/domain/execution_test.go: Added tests for JSON parsing edge cases
-  - internal/service/confirmation_service_test.go: Updated tests to use pointer values for AveragePrice
-- **Result**: Service now successfully parses execution service responses with scientific notation and null values
+  - Added custom JSON unmarshaling to ExecutionUpdateResponse struct
+  - Changed AveragePrice field from float64 to *float64 pointer type
+  - Updated test cases to use pointer values with helper function float64Ptr()
+  - Fixed validation service test that had incorrect expected error message for execution status validation
+- **Changes**:
+  - Modified ExecutionUpdateResponse.AveragePrice to pointer type
+  - Added comprehensive tests for ExecutionUpdateResponse JSON parsing
+  - Fixed test expectation from "PENDING, PARTIAL, FULL, CANCELLED" to actual FIX protocol statuses "NEW, SENT, WORK, PART, FULL, HOLD, CNCL, CNCLD, CPART, DEL"
+- **Result**: Service now successfully handles both GET and PUT responses from execution service with scientific notation and null values, all tests passing
 
 Request: Review requirements.md for clarity, actionability, and execution plan structure
 Date: 2025-01-27

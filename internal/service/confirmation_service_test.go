@@ -157,7 +157,7 @@ func TestConfirmationService_HandleFillMessage_Success(t *testing.T) {
 		SecurityID:      "SEC123",
 		Quantity:        1000,
 		QuantityFilled:  1000,
-		AveragePrice:    190.41,
+		AveragePrice:    float64Ptr(190.41),
 		Version:         3,
 	}
 

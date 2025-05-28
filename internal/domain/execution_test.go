@@ -199,3 +199,106 @@ func TestFromExecutionResponse(t *testing.T) {
 	assert.Equal(t, float64(0), execution.AveragePrice) // Should be 0 for null
 	assert.Equal(t, 2, execution.Version)
 }
+
+func TestExecutionUpdateResponse_UnmarshalJSON_ScientificNotation(t *testing.T) {
+	// Test the actual JSON response that was causing the issue
+	jsonData := `{
+		"id": 7,
+		"executionStatus": "FULL",
+		"tradeType": "BUY",
+		"destination": "ML",
+		"securityId": "68336002fe95851f0a2aeda9",
+		"quantity": 1000,
+		"limitPrice": 0,
+		"receivedTimestamp": "2025-05-28T13:04:27.687323Z",
+		"sentTimestamp": "2025-05-28T13:04:27.694589Z",
+		"tradeServiceExecutionId": 8,
+		"quantityFilled": 3700,
+		"averagePrice": 10,
+		"version": 8
+	}`
+
+	var response ExecutionUpdateResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	require.NoError(t, err)
+
+	// Verify all fields are parsed correctly
+	assert.Equal(t, int64(7), response.ID)
+	assert.Equal(t, "FULL", response.ExecutionStatus)
+	assert.Equal(t, "BUY", response.TradeType)
+	assert.Equal(t, "ML", response.Destination)
+	assert.Equal(t, "68336002fe95851f0a2aeda9", response.SecurityID)
+	assert.Equal(t, int64(1000), response.Quantity)
+	assert.Equal(t, float64(0), response.LimitPrice)
+	assert.Equal(t, int64(8), response.TradeServiceExecutionID)
+	assert.Equal(t, int64(3700), response.QuantityFilled)
+	assert.NotNil(t, response.AveragePrice)
+	assert.Equal(t, float64(10), *response.AveragePrice)
+	assert.Equal(t, 8, response.Version)
+
+	// Test GetAveragePrice method
+	assert.Equal(t, float64(10), response.GetAveragePrice())
+}
+
+func TestExecutionUpdateResponse_UnmarshalJSON_WithNullAveragePrice(t *testing.T) {
+	// Test with null average price
+	jsonData := `{
+		"id": 7,
+		"executionStatus": "PARTIAL",
+		"tradeType": "BUY",
+		"destination": "ML",
+		"securityId": "68336002fe95851f0a2aeda9",
+		"quantity": 1000,
+		"limitPrice": 0E-8,
+		"receivedTimestamp": "2025-05-28T13:04:27.687323Z",
+		"sentTimestamp": "2025-05-28T13:04:27.694589Z",
+		"tradeServiceExecutionId": 8,
+		"quantityFilled": 0E-8,
+		"averagePrice": null,
+		"version": 1
+	}`
+
+	var response ExecutionUpdateResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(7), response.ID)
+	assert.Equal(t, "PARTIAL", response.ExecutionStatus)
+	assert.Equal(t, int64(1000), response.Quantity)
+	assert.Equal(t, float64(0), response.LimitPrice)   // Should convert 0E-8 to 0
+	assert.Equal(t, int64(0), response.QuantityFilled) // Should convert 0E-8 to 0
+	assert.Nil(t, response.AveragePrice)               // Should handle null
+	assert.Equal(t, 1, response.Version)
+
+	// Test GetAveragePrice method
+	assert.Equal(t, float64(0), response.GetAveragePrice())
+}
+
+func TestExecutionUpdateResponse_UnmarshalJSON_ScientificNotationStrings(t *testing.T) {
+	// Test with scientific notation as strings
+	jsonData := `{
+		"id": 7,
+		"executionStatus": "FULL",
+		"tradeType": "BUY",
+		"destination": "ML",
+		"securityId": "68336002fe95851f0a2aeda9",
+		"quantity": "1.5E+3",
+		"limitPrice": "1.25E+2",
+		"receivedTimestamp": "2025-05-28T13:04:27.687323Z",
+		"sentTimestamp": "2025-05-28T13:04:27.694589Z",
+		"tradeServiceExecutionId": 8,
+		"quantityFilled": "2.5E+2",
+		"averagePrice": "9.975E+1",
+		"version": 8
+	}`
+
+	var response ExecutionUpdateResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(1500), response.Quantity)      // 1.5E+3 = 1500
+	assert.Equal(t, float64(125), response.LimitPrice)   // 1.25E+2 = 125
+	assert.Equal(t, int64(250), response.QuantityFilled) // 2.5E+2 = 250
+	assert.NotNil(t, response.AveragePrice)
+	assert.Equal(t, float64(99.75), *response.AveragePrice) // 9.975E+1 = 99.75
+}

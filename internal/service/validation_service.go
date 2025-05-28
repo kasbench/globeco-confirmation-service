@@ -198,14 +198,20 @@ func (vs *ValidationService) validateBusinessRules(ctx context.Context, fill *do
 
 	// Rule 3: Execution status must be valid
 	validStatuses := map[string]bool{
-		"PENDING":   true,
-		"PARTIAL":   true,
-		"FULL":      true,
-		"CANCELLED": true,
+		"NEW":   true,
+		"SENT":  true,
+		"WORK":  true,
+		"PART":  true,
+		"FULL":  true,
+		"HOLD":  true,
+		"CNCL":  true,
+		"CNCLD": true,
+		"CPART": true,
+		"DEL":   true,
 	}
 	if !validStatuses[fill.ExecutionStatus] {
 		result.addError("executionStatus", "BUSINESS_RULE_VIOLATION",
-			fmt.Sprintf("executionStatus '%s' is not valid. Must be one of: PENDING, PARTIAL, FULL, CANCELLED",
+			fmt.Sprintf("executionStatus '%s' is not valid. Must be one of: NEW, SENT, WORK, PART, FULL, HOLD, CNCL, CNCLD, CPART, DEL",
 				fill.ExecutionStatus))
 	}
 
