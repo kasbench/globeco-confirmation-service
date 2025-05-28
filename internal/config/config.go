@@ -99,7 +99,7 @@ func GetDefaults() *Config {
 			IdleTimeout:  60 * time.Second,
 		},
 		Kafka: KafkaConfig{
-			Brokers:           []string{"globeco-execution-service-kafka:9093"},
+			Brokers:           []string{"globeco-execution-service-kafka:9092"},
 			Topic:             "fills",
 			ConsumerGroup:     "confirmation-service",
 			ConsumerTimeout:   30 * time.Second,

@@ -38,8 +38,8 @@ func (m *MockKafkaConsumer) Start(ctx context.Context) error {
 	return args.Error(0)
 }
 
-func (m *MockKafkaConsumer) Stop() error {
-	args := m.Called()
+func (m *MockKafkaConsumer) Stop(ctx context.Context) error {
+	args := m.Called(ctx)
 	return args.Error(0)
 }
 

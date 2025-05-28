@@ -11,7 +11,7 @@ type Fill struct {
 	ID                  int64   `json:"id" validate:"required"`
 	ExecutionServiceID  int64   `json:"executionServiceId" validate:"required,min=1"`
 	IsOpen              bool    `json:"isOpen"`
-	ExecutionStatus     string  `json:"executionStatus" validate:"required,oneof=PENDING PARTIAL FULL CANCELLED"`
+	ExecutionStatus     string  `json:"executionStatus" validate:"required,oneof=NEW SENT WORK PART FULL HOLD CNCL CNCLD CPART DEL"`
 	TradeType           string  `json:"tradeType" validate:"required,oneof=BUY SELL"`
 	Destination         string  `json:"destination" validate:"required"`
 	SecurityID          string  `json:"securityId" validate:"required"`
