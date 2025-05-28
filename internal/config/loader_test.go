@@ -54,7 +54,7 @@ func TestLoadFromEnvironment(t *testing.T) {
 
 	// Set test environment variables
 	os.Setenv("HTTP_PORT", "9090")
-	os.Setenv("KAFKA_BROKERS", "localhost:9092,localhost:9093")
+	os.Setenv("KAFKA_BROKERS", "localhost:9092,localhost:9092")
 	os.Setenv("EXECUTION_SERVICE_URL", "http://localhost:8085")
 	os.Setenv("LOG_LEVEL", "debug")
 
