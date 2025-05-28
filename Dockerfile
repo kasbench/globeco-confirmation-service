@@ -5,13 +5,14 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-WORKDIR /src/cmd/fix-engine
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -o /out/globeco-fix-engine
+WORKDIR /src/cmd/confirmation-service
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -o /out/globeco-confirmation-service
 
 FROM --platform=$TARGETPLATFORM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /
-COPY --from=builder /out/globeco-fix-engine /globeco-fix-engine
+COPY --from=builder /out/globeco-confirmation-service /globeco-confirmation-service
+COPY --from=builder /src/config.yaml /config.yaml
 # COPY --from=builder /src/migrations /migrations
-EXPOSE 8080
+EXPOSE 8086
 USER nonroot
-ENTRYPOINT ["/globeco-fix-engine"] 
+ENTRYPOINT ["/globeco-confirmation-service"] 

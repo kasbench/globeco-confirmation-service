@@ -1,0 +1,60 @@
+# GlobeCo Confirmation Service Configuration
+# Copy this file to config.yaml and modify as needed
+
+# HTTP Server Configuration
+http:
+  port: 8086
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+
+# Kafka Configuration
+kafka:
+  brokers:
+    - "globeco-execution-service-kafka:9092"
+  topic: "fills"
+  consumer_group: "confirmation-service"
+  consumer_timeout: "30s"
+  max_retries: 3
+  retry_backoff: "100ms"
+
+# Execution Service Configuration
+execution_service:
+  base_url: "http://globeco-execution-service:8084"
+  timeout: "10s"
+  max_retries: 3
+  retry_backoff: "100ms"
+  circuit_breaker:
+    failure_threshold: 5
+    timeout: "30s"
+
+# Logging Configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json, console
+  output: "stdout"  # stdout, stderr, file
+
+# Metrics Configuration
+metrics:
+  enabled: true
+  path: "/metrics"
+  namespace: "confirmation"
+
+# Tracing Configuration
+tracing:
+  enabled: true
+  service_name: "confirmation-service"
+  service_version: "1.0.0"
+  exporter: "stdout"  # stdout, jaeger, otlp
+
+# Performance Configuration
+performance:
+  max_concurrent_requests: 10
+  message_buffer_size: 1000
+  worker_pool_size: 5
+
+# Health Check Configuration
+health:
+  startup_grace_period: "30s"
+  check_interval: "10s" 

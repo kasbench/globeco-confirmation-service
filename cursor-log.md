@@ -48,4 +48,12 @@ Request: Please proceed to the next step
 Date: 2025-01-27
 Action: Implementing Step 9 - Middleware and Utilities (additional time/data utilities, comprehensive middleware testing, enhanced utility functions)
 
+Request: Fix Docker build error in CI/CD pipeline
+Date: 2025-01-27
+Action: Fixed Dockerfile to build correct confirmation-service instead of fix-engine, updated paths and port from 8080 to 8086
+
+Request: Can you confirm that I have @config.yaml in the correct directory to be picked up in the build
+Date: 2025-01-27
+Action: Confirmed config.yaml is correctly located in root directory for local development, identified missing config file copy in Dockerfile and fixed it
+
 
