@@ -28,12 +28,14 @@ type HTTPConfig struct {
 
 // KafkaConfig represents Kafka configuration
 type KafkaConfig struct {
-	Brokers         []string      `mapstructure:"brokers" validate:"required,min=1"`
-	Topic           string        `mapstructure:"topic" validate:"required"`
-	ConsumerGroup   string        `mapstructure:"consumer_group" validate:"required"`
-	ConsumerTimeout time.Duration `mapstructure:"consumer_timeout" validate:"required"`
-	MaxRetries      int           `mapstructure:"max_retries" validate:"required,min=0"`
-	RetryBackoff    time.Duration `mapstructure:"retry_backoff" validate:"required"`
+	Brokers           []string      `mapstructure:"brokers" validate:"required,min=1"`
+	Topic             string        `mapstructure:"topic" validate:"required"`
+	ConsumerGroup     string        `mapstructure:"consumer_group" validate:"required"`
+	ConsumerTimeout   time.Duration `mapstructure:"consumer_timeout" validate:"required"`
+	ConnectionTimeout time.Duration `mapstructure:"connection_timeout" validate:"required"`
+	FetchTimeout      time.Duration `mapstructure:"fetch_timeout" validate:"required"`
+	MaxRetries        int           `mapstructure:"max_retries" validate:"required,min=0"`
+	RetryBackoff      time.Duration `mapstructure:"retry_backoff" validate:"required"`
 }
 
 // ExecutionServiceConfig represents Execution Service configuration
@@ -97,12 +99,14 @@ func GetDefaults() *Config {
 			IdleTimeout:  60 * time.Second,
 		},
 		Kafka: KafkaConfig{
-			Brokers:         []string{"globeco-execution-service-kafka:9092"},
-			Topic:           "fills",
-			ConsumerGroup:   "confirmation-service",
-			ConsumerTimeout: 30 * time.Second,
-			MaxRetries:      3,
-			RetryBackoff:    100 * time.Millisecond,
+			Brokers:           []string{"globeco-execution-service-kafka:9092"},
+			Topic:             "fills",
+			ConsumerGroup:     "confirmation-service",
+			ConsumerTimeout:   30 * time.Second,
+			ConnectionTimeout: 10 * time.Second,
+			FetchTimeout:      5 * time.Second,
+			MaxRetries:        3,
+			RetryBackoff:      100 * time.Millisecond,
 		},
 		ExecutionService: ExecutionServiceConfig{
 			BaseURL:      "http://globeco-execution-service:8084",
