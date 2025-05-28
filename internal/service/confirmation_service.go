@@ -14,40 +14,49 @@ import (
 
 // ConfirmationService implements the core business logic for processing fill messages
 type ConfirmationService struct {
-	executionClient   ExecutionServiceClientInterface
-	logger            *logger.Logger
-	metrics           *metrics.Metrics
-	resilienceManager ResilienceManagerInterface
-	tracingProvider   *utils.TracingProvider
+	executionClient    ExecutionServiceClientInterface
+	logger             *logger.Logger
+	metrics            *metrics.Metrics
+	resilienceManager  ResilienceManagerInterface
+	tracingProvider    *utils.TracingProvider
+	validationService  *ValidationService
+	duplicateDetection *DuplicateDetectionService
 }
 
 // ConfirmationServiceConfig represents the configuration for the confirmation service
 type ConfirmationServiceConfig struct {
-	ExecutionClient   ExecutionServiceClientInterface
-	Logger            *logger.Logger
-	Metrics           *metrics.Metrics
-	ResilienceManager ResilienceManagerInterface
-	TracingProvider   *utils.TracingProvider
+	ExecutionClient    ExecutionServiceClientInterface
+	Logger             *logger.Logger
+	Metrics            *metrics.Metrics
+	ResilienceManager  ResilienceManagerInterface
+	TracingProvider    *utils.TracingProvider
+	ValidationService  *ValidationService
+	DuplicateDetection *DuplicateDetectionService
 }
 
 // NewConfirmationService creates a new confirmation service
 func NewConfirmationService(config ConfirmationServiceConfig) *ConfirmationService {
 	return &ConfirmationService{
-		executionClient:   config.ExecutionClient,
-		logger:            config.Logger,
-		metrics:           config.Metrics,
-		resilienceManager: config.ResilienceManager,
-		tracingProvider:   config.TracingProvider,
+		executionClient:    config.ExecutionClient,
+		logger:             config.Logger,
+		metrics:            config.Metrics,
+		resilienceManager:  config.ResilienceManager,
+		tracingProvider:    config.TracingProvider,
+		validationService:  config.ValidationService,
+		duplicateDetection: config.DuplicateDetection,
 	}
 }
 
 // HandleFillMessage implements the MessageHandler interface
 // This method implements the core business logic:
-// 1. Receive fill message from Kafka
-// 2. Get current execution version from Execution Service
-// 3. Update execution with fill data
+// 1. Comprehensive input validation
+// 2. Duplicate detection and idempotent processing
+// 3. Get current execution version from Execution Service
+// 4. Business rule validation
+// 5. Update execution with fill data
 func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *domain.Fill) error {
 	startTime := time.Now()
+	var processingError error
 
 	cs.logger.WithContext(ctx).Info("Processing fill message",
 		zap.Int64("fill_id", fill.ID),
@@ -70,15 +79,74 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 		}()
 	}
 
-	// Step 1: Get current execution from Execution Service to retrieve version
+	// Ensure we record the processing result for duplicate detection
+	defer func() {
+		if cs.duplicateDetection != nil {
+			processingTime := time.Since(startTime)
+			errorMessage := ""
+			if processingError != nil {
+				errorMessage = processingError.Error()
+			}
+			cs.duplicateDetection.RecordProcessedMessage(ctx, fill, processingError == nil, processingTime, errorMessage)
+		}
+	}()
+
+	// Step 1: Comprehensive input validation
+	if cs.validationService != nil {
+		cs.logger.WithContext(ctx).Debug("Performing comprehensive validation",
+			zap.Int64("fill_id", fill.ID),
+		)
+
+		validationResult := cs.validationService.ValidateFillMessage(ctx, fill)
+		if !validationResult.IsValid {
+			processingError = domain.NewValidationError("comprehensive_validation_failed", validationResult.GetErrorSummary())
+			cs.metrics.RecordMessageFailed()
+			return processingError
+		}
+
+		if len(validationResult.Warnings) > 0 {
+			cs.logger.WithContext(ctx).Warn("Fill message validation passed with warnings",
+				zap.Int64("fill_id", fill.ID),
+				zap.String("warnings", validationResult.GetWarningSummary()),
+			)
+		}
+	}
+
+	// Step 2: Duplicate detection and idempotent processing
+	if cs.duplicateDetection != nil {
+		cs.logger.WithContext(ctx).Debug("Checking for duplicate message",
+			zap.Int64("fill_id", fill.ID),
+		)
+
+		duplicateResult := cs.duplicateDetection.CheckDuplicate(ctx, fill)
+		if duplicateResult.IsDuplicate && !duplicateResult.ShouldProcess {
+			cs.logger.WithContext(ctx).Info("Skipping duplicate message processing",
+				zap.Int64("fill_id", fill.ID),
+				zap.String("reason", duplicateResult.Reason),
+			)
+			// This is not an error - it's successful idempotent processing
+			cs.metrics.RecordMessageProcessed()
+			return nil
+		}
+
+		if duplicateResult.IsDuplicate {
+			cs.logger.WithContext(ctx).Info("Processing duplicate message with changes",
+				zap.Int64("fill_id", fill.ID),
+				zap.String("reason", duplicateResult.Reason),
+			)
+		}
+	}
+
+	// Step 3: Get current execution from Execution Service to retrieve version
 	cs.logger.WithContext(ctx).Debug("Getting current execution version",
 		zap.Int64("execution_service_id", fill.ExecutionServiceID),
 	)
 
 	execution, err := cs.executionClient.GetExecution(ctx, fill.ExecutionServiceID)
 	if err != nil {
+		processingError = fmt.Errorf("failed to get execution %d: %w", fill.ExecutionServiceID, err)
 		cs.metrics.RecordMessageFailed()
-		return fmt.Errorf("failed to get execution %d: %w", fill.ExecutionServiceID, err)
+		return processingError
 	}
 
 	cs.logger.WithContext(ctx).Debug("Retrieved current execution",
@@ -88,13 +156,14 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 		zap.Int64("current_quantity_filled", execution.QuantityFilled),
 	)
 
-	// Step 2: Validate business rules
+	// Step 4: Business rule validation against current execution
 	if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
+		processingError = fmt.Errorf("fill message validation failed: %w", err)
 		cs.metrics.RecordMessageFailed()
-		return fmt.Errorf("fill message validation failed: %w", err)
+		return processingError
 	}
 
-	// Step 3: Create update request using the current version
+	// Step 5: Create update request using the current version
 	updateRequest := fill.ToUpdateRequest(execution.Version)
 
 	cs.logger.WithContext(ctx).Debug("Created update request",
@@ -103,18 +172,19 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 		zap.Int("version", updateRequest.Version),
 	)
 
-	// Step 4: Update execution in Execution Service
+	// Step 6: Update execution in Execution Service
 	cs.logger.WithContext(ctx).Debug("Updating execution",
 		zap.Int64("execution_service_id", fill.ExecutionServiceID),
 	)
 
 	updateResponse, err := cs.executionClient.UpdateExecution(ctx, fill.ExecutionServiceID, updateRequest)
 	if err != nil {
+		processingError = fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
 		cs.metrics.RecordMessageFailed()
-		return fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
+		return processingError
 	}
 
-	// Step 5: Log successful completion and record metrics
+	// Step 7: Log successful completion and record metrics
 	processingTime := time.Since(startTime)
 
 	cs.logger.WithContext(ctx).Info("Successfully processed fill message",
@@ -230,6 +300,11 @@ func (cs *ConfirmationService) GetStats() map[string]interface{} {
 	if cs.resilienceManager != nil {
 		stats["circuit_breaker"] = cs.resilienceManager.GetCircuitBreakerStats()
 		stats["dead_letter_queue"] = cs.resilienceManager.GetDeadLetterQueueStats()
+	}
+
+	// Add duplicate detection stats
+	if cs.duplicateDetection != nil {
+		stats["duplicate_detection"] = cs.duplicateDetection.GetProcessedMessageStats()
 	}
 
 	return stats
