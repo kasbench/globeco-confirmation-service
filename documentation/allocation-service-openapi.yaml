@@ -1,0 +1,344 @@
+openapi: 3.0.3
+info:
+  title: GlobeCo Allocation Service API
+  version: 1.0.0
+  description: |
+    The GlobeCo Allocation Service receives executed trades and generates input for the Portfolio Accounting Service. This API allows clients to create, list, and send executions, as well as check service health.
+servers:
+  - url: http://localhost:8089
+    description: Local server
+
+paths:
+  /api/v1/executions:
+    get:
+      summary: List executions
+      description: Returns a paginated list of executions.
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+          description: Number of executions to return
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Offset for pagination
+      responses:
+        '200':
+          description: Paginated list of executions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Batch create executions
+      description: Create a batch of executions (max 100 per request).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ExecutionPostDTO'
+      responses:
+        '201':
+          description: Batch created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchCreateResponse'
+        '207':
+          description: Mixed results (some errors)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/executions/{id}:
+    get:
+      summary: Get execution by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Execution found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/executions/send:
+    post:
+      summary: Send executions to Portfolio Accounting
+      responses:
+        '200':
+          description: Send successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResponse'
+        '409':
+          description: Batch process already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  schemas:
+    ExecutionDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        executionServiceId:
+          type: integer
+        isOpen:
+          type: boolean
+        executionStatus:
+          type: string
+        tradeType:
+          type: string
+        destination:
+          type: string
+        securityId:
+          type: string
+        portfolioId:
+          type: string
+          nullable: true
+        ticker:
+          type: string
+        quantity:
+          type: number
+        limitPrice:
+          type: number
+          nullable: true
+        receivedTimestamp:
+          type: string
+          format: date-time
+        sentTimestamp:
+          type: string
+          format: date-time
+        lastFillTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        quantityFilled:
+          type: number
+        totalAmount:
+          type: number
+        averagePrice:
+          type: number
+        version:
+          type: integer
+    ExecutionPostDTO:
+      type: object
+      required:
+        - executionServiceId
+        - executionStatus
+        - tradeType
+        - destination
+        - securityId
+        - ticker
+        - quantity
+        - receivedTimestamp
+        - sentTimestamp
+        - averagePrice
+      properties:
+        executionServiceId:
+          type: integer
+        isOpen:
+          type: boolean
+        executionStatus:
+          type: string
+        tradeType:
+          type: string
+          enum: [BUY, SELL]
+        destination:
+          type: string
+        securityId:
+          type: string
+        ticker:
+          type: string
+        quantity:
+          type: number
+        limitPrice:
+          type: number
+          nullable: true
+        receivedTimestamp:
+          type: string
+          format: date-time
+        sentTimestamp:
+          type: string
+          format: date-time
+        lastFillTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        quantityFilled:
+          type: number
+        totalAmount:
+          type: number
+        averagePrice:
+          type: number
+    ExecutionListResponse:
+      type: object
+      properties:
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionDTO'
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+    PaginationInfo:
+      type: object
+      properties:
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+        currentPage:
+          type: integer
+        pageSize:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrevious:
+          type: boolean
+    BatchCreateResponse:
+      type: object
+      properties:
+        processedCount:
+          type: integer
+        skippedCount:
+          type: integer
+        errorCount:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionResult'
+    ExecutionResult:
+      type: object
+      properties:
+        executionServiceId:
+          type: integer
+        status:
+          type: string
+          enum: [created, skipped, error]
+        error:
+          type: string
+          nullable: true
+        executionId:
+          type: integer
+          nullable: true
+    SendResponse:
+      type: object
+      properties:
+        processedCount:
+          type: integer
+        fileName:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        status:
+          type: integer
+        timestamp:
+          type: string
+        details:
+          type: string
+          nullable: true
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse' 
