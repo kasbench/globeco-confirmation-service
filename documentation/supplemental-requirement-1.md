@@ -86,11 +86,11 @@ Phase 4
 - [x] Update integration tests to cover Allocation Service flow
 
 Phase 5
-- [ ] Update documentation and runbooks
-- [ ] Validate observability (metrics, tracing, logging)
+- [x] Update documentation and runbooks
+- [x] Validate observability (metrics, tracing, logging)
 
 Phase 6
-- [ ] Review and refactor for code quality and consistency
+- [x] Review and refactor for code quality and consistency
 
 ---
 

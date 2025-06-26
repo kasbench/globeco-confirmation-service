@@ -66,54 +66,58 @@ func NewConfirmationService(config ConfirmationServiceConfig) *ConfirmationServi
 func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *domain.Fill) error {
 	startTime := time.Now()
 	var processingError error
-	var execServiceFailed bool
 
-	cs.logger.WithContext(ctx).Info("Processing fill message",
-		zap.Int64("fill_id", fill.ID),
-		zap.Int64("execution_service_id", fill.ExecutionServiceID),
-		zap.String("execution_status", fill.ExecutionStatus),
-		zap.String("trade_type", fill.TradeType),
-		zap.String("ticker", fill.Ticker),
-		zap.Int64("quantity_filled", fill.QuantityFilled),
-		zap.Float64("average_price", fill.AveragePrice),
-	)
+	cs.logger.WithContext(ctx).Info("Processing fill message", zap.Int64("fill_id", fill.ID))
 
-	// Start tracing span for the entire operation
-	var span interface{}
-	if cs.tracingProvider != nil {
-		ctx, span = cs.tracingProvider.StartSpan(ctx, "handle_fill_message")
-		defer func() {
-			if s, ok := span.(interface{ End() }); ok {
-				s.End()
-			}
-		}()
-	}
+	// Start tracing span
+	ctx, span := cs.tracingProvider.StartSpan(ctx, "handle_fill_message")
+	defer span.End()
 
-	// Ensure we record the processing result for duplicate detection
+	// Defer recording the processing result for duplicate detection
 	defer func() {
 		if cs.duplicateDetection != nil {
-			processingTime := time.Since(startTime)
-			errorMessage := ""
-			if processingError != nil {
-				errorMessage = processingError.Error()
-			}
-			cs.duplicateDetection.RecordProcessedMessage(ctx, fill, processingError == nil, processingTime, errorMessage)
+			cs.duplicateDetection.RecordProcessedMessage(ctx, fill, processingError == nil, time.Since(startTime), getErrorMessage(processingError))
 		}
 	}()
 
-	// Step 1: Comprehensive input validation
-	if cs.validationService != nil {
-		cs.logger.WithContext(ctx).Debug("Performing comprehensive validation",
-			zap.Int64("fill_id", fill.ID),
-		)
+	// Comprehensive input validation
+	if err := cs.validateInitialFillMessage(ctx, fill); err != nil {
+		processingError = err
+		cs.metrics.RecordMessageFailed()
+		return processingError
+	}
 
+	// Duplicate detection
+	if skip, reason := cs.checkForDuplicates(ctx, fill); skip {
+		cs.logger.WithContext(ctx).Info("Skipping duplicate message processing", zap.Int64("fill_id", fill.ID), zap.String("reason", reason))
+		cs.metrics.RecordMessageProcessed()
+		return nil
+	}
+
+	// Handle Execution Service call
+	updateResponse, execServiceFailed, execErr := cs.handleExecutionServiceCall(ctx, fill)
+	if execServiceFailed {
+		processingError = execErr
+	}
+
+	// Handle Allocation Service call for completed trades
+	cs.handleAllocationServiceCall(ctx, fill)
+
+	if !execServiceFailed {
+		cs.logSuccess(ctx, fill, updateResponse, time.Since(startTime))
+		cs.metrics.RecordMessageProcessed()
+		cs.metrics.RecordMessageProcessingTime(time.Since(startTime))
+	}
+
+	return processingError
+}
+
+func (cs *ConfirmationService) validateInitialFillMessage(ctx context.Context, fill *domain.Fill) error {
+	if cs.validationService != nil {
 		validationResult := cs.validationService.ValidateFillMessage(ctx, fill)
 		if !validationResult.IsValid {
-			processingError = domain.NewValidationError("comprehensive_validation_failed", validationResult.GetErrorSummary())
-			cs.metrics.RecordMessageFailed()
-			return processingError
+			return domain.NewValidationError("comprehensive_validation_failed", validationResult.GetErrorSummary())
 		}
-
 		if len(validationResult.Warnings) > 0 {
 			cs.logger.WithContext(ctx).Warn("Fill message validation passed with warnings",
 				zap.Int64("fill_id", fill.ID),
@@ -121,24 +125,15 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 			)
 		}
 	}
+	return nil
+}
 
-	// Step 2: Duplicate detection and idempotent processing
+func (cs *ConfirmationService) checkForDuplicates(ctx context.Context, fill *domain.Fill) (bool, string) {
 	if cs.duplicateDetection != nil {
-		cs.logger.WithContext(ctx).Debug("Checking for duplicate message",
-			zap.Int64("fill_id", fill.ID),
-		)
-
 		duplicateResult := cs.duplicateDetection.CheckDuplicate(ctx, fill)
 		if duplicateResult.IsDuplicate && !duplicateResult.ShouldProcess {
-			cs.logger.WithContext(ctx).Info("Skipping duplicate message processing",
-				zap.Int64("fill_id", fill.ID),
-				zap.String("reason", duplicateResult.Reason),
-			)
-			// This is not an error - it's successful idempotent processing
-			cs.metrics.RecordMessageProcessed()
-			return nil
+			return true, duplicateResult.Reason
 		}
-
 		if duplicateResult.IsDuplicate {
 			cs.logger.WithContext(ctx).Info("Processing duplicate message with changes",
 				zap.Int64("fill_id", fill.ID),
@@ -146,106 +141,24 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 			)
 		}
 	}
+	return false, ""
+}
 
-	// Step 3: Get current execution from Execution Service to retrieve version
-	cs.logger.WithContext(ctx).Debug("Getting current execution version",
+func (cs *ConfirmationService) logSuccess(ctx context.Context, fill *domain.Fill, updateResponse *domain.ExecutionUpdateResponse, duration time.Duration) {
+	cs.logger.WithContext(ctx).Info("Successfully processed fill message",
+		zap.Int64("fill_id", fill.ID),
 		zap.Int64("execution_service_id", fill.ExecutionServiceID),
+		zap.Int("new_version", updateResponse.Version),
+		zap.Duration("processing_time", duration),
+		zap.String("final_status", updateResponse.ExecutionStatus),
 	)
+}
 
-	execution, err := cs.executionClient.GetExecution(ctx, fill.ExecutionServiceID)
+func getErrorMessage(err error) string {
 	if err != nil {
-		processingError = fmt.Errorf("failed to get execution %d: %w", fill.ExecutionServiceID, err)
-		cs.metrics.RecordMessageFailed()
-		execServiceFailed = true
-		// Add to DLQ for execution service failure
-		if cs.resilienceManager != nil {
-			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
-		}
-		// Do NOT return here; continue to Allocation Service call
-	} else {
-		cs.logger.WithContext(ctx).Debug("Retrieved current execution",
-			zap.Int64("execution_service_id", fill.ExecutionServiceID),
-			zap.Int("current_version", execution.Version),
-			zap.String("current_status", execution.ExecutionStatus),
-			zap.Int64("current_quantity_filled", execution.QuantityFilled),
-		)
-
-		// Step 4: Business rule validation against current execution
-		if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
-			processingError = fmt.Errorf("fill message validation failed: %w", err)
-			cs.metrics.RecordMessageFailed()
-			execServiceFailed = true
-			// Add to DLQ for execution service failure
-			if cs.resilienceManager != nil {
-				_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
-			}
-			// Do NOT return here; continue to Allocation Service call
-		} else {
-			// Step 5: Create update request using the current version
-			updateRequest := fill.ToUpdateRequest(execution.Version)
-
-			cs.logger.WithContext(ctx).Debug("Created update request",
-				zap.Int64("quantity_filled", updateRequest.QuantityFilled),
-				zap.Float64("average_price", updateRequest.AveragePrice),
-				zap.Int("version", updateRequest.Version),
-			)
-
-			// Step 6: Update execution in Execution Service
-			cs.logger.WithContext(ctx).Debug("Updating execution",
-				zap.Int64("execution_service_id", fill.ExecutionServiceID),
-			)
-
-			updateResponse, err := cs.executionClient.UpdateExecution(ctx, fill.ExecutionServiceID, updateRequest)
-			if err != nil {
-				processingError = fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
-				cs.metrics.RecordMessageFailed()
-				execServiceFailed = true
-				// Add to DLQ for execution service failure
-				if cs.resilienceManager != nil {
-					_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
-				}
-				// Continue to Allocation Service call regardless
-			}
-
-			// Step 8: Log successful completion and record metrics (if execution service succeeded)
-			processingTime := time.Since(startTime)
-
-			if !execServiceFailed {
-				cs.logger.WithContext(ctx).Info("Successfully processed fill message",
-					zap.Int64("fill_id", fill.ID),
-					zap.Int64("execution_service_id", fill.ExecutionServiceID),
-					zap.Int("old_version", execution.Version),
-					zap.Int("new_version", updateResponse.Version),
-					zap.Duration("processing_time", processingTime),
-					zap.String("final_status", updateResponse.ExecutionStatus),
-				)
-				cs.metrics.RecordMessageProcessed()
-				cs.metrics.RecordMessageProcessingTime(processingTime)
-			}
-		}
+		return err.Error()
 	}
-
-	// Step 7: Call Allocation Service for completed trades (isOpen == false)
-	if !fill.IsOpen && cs.allocationClient != nil {
-		allocationDTO := domain.NewAllocationServiceExecutionDTO(fill)
-		err := cs.allocationClient.PostExecution(ctx, allocationDTO)
-		if err != nil {
-			cs.logger.WithContext(ctx).Error("Failed to post to Allocation Service",
-				zap.Int64("fill_id", fill.ID),
-				zap.Error(err),
-			)
-			// Add to DLQ for allocation service failure
-			if cs.resilienceManager != nil {
-				_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, allocationDTO, "allocation-service failure", []error{err}, 1, map[string]interface{}{"service": "allocation-service"})
-			}
-		}
-	}
-
-	if execServiceFailed {
-		return processingError
-	}
-
-	return nil
+	return ""
 }
 
 // validateFillMessage validates business rules for the fill message
@@ -322,6 +235,63 @@ func (cs *ConfirmationService) validateFillMessage(ctx context.Context, fill *do
 	}
 
 	return nil
+}
+
+// handleExecutionServiceCall handles the interaction with the Execution Service
+func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, fill *domain.Fill) (*domain.ExecutionUpdateResponse, bool, error) {
+	// Get current execution from Execution Service to retrieve version
+	execution, err := cs.executionClient.GetExecution(ctx, fill.ExecutionServiceID)
+	if err != nil {
+		processingError := fmt.Errorf("failed to get execution %d: %w", fill.ExecutionServiceID, err)
+		cs.metrics.RecordMessageFailed()
+		if cs.resilienceManager != nil {
+			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+		}
+		return nil, true, processingError
+	}
+
+	// Business rule validation against current execution
+	if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
+		processingError := fmt.Errorf("fill message validation failed: %w", err)
+		cs.metrics.RecordMessageFailed()
+		if cs.resilienceManager != nil {
+			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+		}
+		return nil, true, processingError
+	}
+
+	// Create update request using the current version
+	updateRequest := fill.ToUpdateRequest(execution.Version)
+
+	// Update execution in Execution Service
+	updateResponse, err := cs.executionClient.UpdateExecution(ctx, fill.ExecutionServiceID, updateRequest)
+	if err != nil {
+		processingError := fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
+		cs.metrics.RecordMessageFailed()
+		if cs.resilienceManager != nil {
+			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+		}
+		return nil, true, processingError
+	}
+
+	return updateResponse, false, nil
+}
+
+// handleAllocationServiceCall handles the interaction with the Allocation Service
+func (cs *ConfirmationService) handleAllocationServiceCall(ctx context.Context, fill *domain.Fill) {
+	if !fill.IsOpen && cs.allocationClient != nil {
+		allocationDTO := domain.NewAllocationServiceExecutionDTO(fill)
+		err := cs.allocationClient.PostExecution(ctx, allocationDTO)
+		if err != nil {
+			cs.logger.WithContext(ctx).Error("Failed to post to Allocation Service",
+				zap.Int64("fill_id", fill.ID),
+				zap.Error(err),
+			)
+			if cs.resilienceManager != nil {
+				_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, allocationDTO, "allocation-service failure", []error{err}, 1, map[string]interface{}{"service": "allocation-service"})
+			}
+		}
+	}
 }
 
 // IsHealthy checks if the confirmation service is healthy

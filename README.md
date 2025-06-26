@@ -1,6 +1,6 @@
 # GlobeCo Confirmation Service
 
-A Go microservice that processes trade fill messages from Kafka and updates the GlobeCo Execution Service.
+A Go microservice that processes trade fill messages from Kafka, updates the GlobeCo Execution Service, and notifies the GlobeCo Allocation Service.
 
 ## Overview
 
@@ -48,6 +48,7 @@ The service supports configuration via environment variables and config files:
 | `KAFKA_TOPIC` | Kafka topic to consume | `fills` |
 | `KAFKA_CONSUMER_GROUP` | Kafka consumer group | `confirmation-service` |
 | `EXECUTION_SERVICE_URL` | Execution Service base URL | `http://globeco-execution-service:8084` |
+| `ALLOCATION_SERVICE_URL` | Allocation Service base URL | `http://globeco-allocation-service:8089` |
 | `HTTP_PORT` | HTTP server port | `8086` |
 | `LOG_LEVEL` | Logging level | `info` |
 

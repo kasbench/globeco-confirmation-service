@@ -118,11 +118,15 @@ func TestConfirmationService_HandleFillMessage_Success(t *testing.T) {
 		appMetrics,
 	)
 
+	tracingProvider, err := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
+	require.NoError(t, err)
+
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockClient,
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
+		TracingProvider:   tracingProvider,
 	})
 
 	// Test data
@@ -172,8 +176,8 @@ func TestConfirmationService_HandleFillMessage_Success(t *testing.T) {
 	}
 
 	// Setup expectations
-	mockClient.On("GetExecution", ctx, int64(456)).Return(currentExecution, nil)
-	mockClient.On("UpdateExecution", ctx, int64(456), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResponse, nil)
+	mockClient.On("GetExecution", mock.Anything, int64(456)).Return(currentExecution, nil)
+	mockClient.On("UpdateExecution", mock.Anything, int64(456), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResponse, nil)
 
 	// Execute
 	err = service.HandleFillMessage(ctx, fill)
@@ -205,11 +209,15 @@ func TestConfirmationService_HandleFillMessage_GetExecutionError(t *testing.T) {
 		appMetrics,
 	)
 
+	tracingProvider, err := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
+	require.NoError(t, err)
+
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockClient,
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
+		TracingProvider:   tracingProvider,
 	})
 
 	// Test data
@@ -229,7 +237,7 @@ func TestConfirmationService_HandleFillMessage_GetExecutionError(t *testing.T) {
 
 	// Setup expectations
 	expectedError := domain.NewNotFoundError("execution", "execution not found")
-	mockClient.On("GetExecution", ctx, int64(456)).Return(nil, expectedError)
+	mockClient.On("GetExecution", mock.Anything, int64(456)).Return(nil, expectedError)
 
 	// Execute
 	err = service.HandleFillMessage(ctx, fill)
@@ -262,11 +270,15 @@ func TestConfirmationService_HandleFillMessage_ValidationError(t *testing.T) {
 		appMetrics,
 	)
 
+	tracingProvider, err := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
+	require.NoError(t, err)
+
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockClient,
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
+		TracingProvider:   tracingProvider,
 	})
 
 	// Test data - mismatched trade types
@@ -297,7 +309,7 @@ func TestConfirmationService_HandleFillMessage_ValidationError(t *testing.T) {
 	}
 
 	// Setup expectations
-	mockClient.On("GetExecution", ctx, int64(456)).Return(currentExecution, nil)
+	mockClient.On("GetExecution", mock.Anything, int64(456)).Return(currentExecution, nil)
 
 	// Execute
 	err = service.HandleFillMessage(ctx, fill)
@@ -562,6 +574,7 @@ func TestConfirmationService_HandleFillMessage_AllocationSuccess(t *testing.T) {
 	mockResilience := &MockResilienceManager{}
 	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
 	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+	tracingProvider, _ := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
 
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockExecClient,
@@ -569,6 +582,7 @@ func TestConfirmationService_HandleFillMessage_AllocationSuccess(t *testing.T) {
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: mockResilience,
+		TracingProvider:   tracingProvider,
 	})
 
 	ctx := context.Background()
@@ -613,9 +627,9 @@ func TestConfirmationService_HandleFillMessage_AllocationSuccess(t *testing.T) {
 		AveragePrice:    float64Ptr(10.0),
 		Version:         2,
 	}
-	mockExecClient.On("GetExecution", ctx, int64(2)).Return(execResp, nil)
-	mockExecClient.On("UpdateExecution", ctx, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
-	mockAllocClient.On("PostExecution", ctx, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(nil)
+	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(execResp, nil)
+	mockExecClient.On("UpdateExecution", mock.Anything, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	mockAllocClient.On("PostExecution", mock.Anything, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(nil)
 
 	err := service.HandleFillMessage(ctx, fill)
 	assert.NoError(t, err)
@@ -630,6 +644,7 @@ func TestConfirmationService_HandleFillMessage_AllocationFailure_DLQ(t *testing.
 	mockResilience := &MockResilienceManager{}
 	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
 	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+	tracingProvider, _ := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
 
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockExecClient,
@@ -637,6 +652,7 @@ func TestConfirmationService_HandleFillMessage_AllocationFailure_DLQ(t *testing.
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: mockResilience,
+		TracingProvider:   tracingProvider,
 	})
 
 	ctx := context.Background()
@@ -681,10 +697,10 @@ func TestConfirmationService_HandleFillMessage_AllocationFailure_DLQ(t *testing.
 		AveragePrice:    float64Ptr(10.0),
 		Version:         2,
 	}
-	mockExecClient.On("GetExecution", ctx, int64(2)).Return(execResp, nil)
-	mockExecClient.On("UpdateExecution", ctx, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
-	mockAllocClient.On("PostExecution", ctx, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
-	mockResilience.On("AddToDeadLetterQueue", ctx, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
+	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(execResp, nil)
+	mockExecClient.On("UpdateExecution", mock.Anything, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	mockAllocClient.On("PostExecution", mock.Anything, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
+	mockResilience.On("AddToDeadLetterQueue", mock.Anything, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
 		return meta["service"] == "allocation-service"
 	})).Return(nil)
 
@@ -702,6 +718,7 @@ func TestConfirmationService_HandleFillMessage_BothFailures_DLQ(t *testing.T) {
 	mockResilience := &MockResilienceManager{}
 	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
 	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+	tracingProvider, _ := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
 
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockExecClient,
@@ -709,6 +726,7 @@ func TestConfirmationService_HandleFillMessage_BothFailures_DLQ(t *testing.T) {
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: mockResilience,
+		TracingProvider:   tracingProvider,
 	})
 
 	ctx := context.Background()
@@ -732,12 +750,12 @@ func TestConfirmationService_HandleFillMessage_BothFailures_DLQ(t *testing.T) {
 		Version:             1,
 	}
 	execErr := assert.AnError
-	mockExecClient.On("GetExecution", ctx, int64(2)).Return(nil, execErr)
-	mockResilience.On("AddToDeadLetterQueue", ctx, fill, "execution-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
+	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(nil, execErr)
+	mockResilience.On("AddToDeadLetterQueue", mock.Anything, fill, "execution-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
 		return meta["service"] == "execution-service"
 	})).Return(nil)
-	mockAllocClient.On("PostExecution", ctx, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
-	mockResilience.On("AddToDeadLetterQueue", ctx, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
+	mockAllocClient.On("PostExecution", mock.Anything, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
+	mockResilience.On("AddToDeadLetterQueue", mock.Anything, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
 		return meta["service"] == "allocation-service"
 	})).Return(nil)
 
@@ -755,6 +773,7 @@ func TestConfirmationService_HandleFillMessage_IsOpenTrue_NoAllocationCall(t *te
 	mockResilience := &MockResilienceManager{}
 	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
 	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+	tracingProvider, _ := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
 
 	service := NewConfirmationService(ConfirmationServiceConfig{
 		ExecutionClient:   mockExecClient,
@@ -762,6 +781,7 @@ func TestConfirmationService_HandleFillMessage_IsOpenTrue_NoAllocationCall(t *te
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: mockResilience,
+		TracingProvider:   tracingProvider,
 	})
 
 	ctx := context.Background()
@@ -806,8 +826,8 @@ func TestConfirmationService_HandleFillMessage_IsOpenTrue_NoAllocationCall(t *te
 		AveragePrice:    float64Ptr(9.0),
 		Version:         2,
 	}
-	mockExecClient.On("GetExecution", ctx, int64(2)).Return(execResp, nil)
-	mockExecClient.On("UpdateExecution", ctx, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(execResp, nil)
+	mockExecClient.On("UpdateExecution", mock.Anything, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
 	// AllocationServiceClient should NOT be called
 
 	err := service.HandleFillMessage(ctx, fill)
