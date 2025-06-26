@@ -1,5 +1,9 @@
 package domain
 
+import (
+	"time"
+)
+
 // AllocationServiceExecutionDTO represents the payload for Allocation Service POST /api/v1/executions
 // See documentation/supplemental-requirement-1.md for mapping details.
 type AllocationServiceExecutionDTO struct {
@@ -12,9 +16,9 @@ type AllocationServiceExecutionDTO struct {
 	Ticker             string   `json:"ticker" validate:"required"`
 	Quantity           int64    `json:"quantity" validate:"required,min=1"`
 	LimitPrice         *float64 `json:"limitPrice"` // Always null
-	ReceivedTimestamp  float64  `json:"receivedTimestamp" validate:"required"`
-	SentTimestamp      float64  `json:"sentTimestamp" validate:"required"`
-	LastFillTimestamp  float64  `json:"lastFillTimestamp" validate:"required"`
+	ReceivedTimestamp  string   `json:"receivedTimestamp" validate:"required,datetime"`
+	SentTimestamp      string   `json:"sentTimestamp" validate:"required,datetime"`
+	LastFillTimestamp  string   `json:"lastFillTimestamp,omitempty"` // nullable in OpenAPI
 	QuantityFilled     int64    `json:"quantityFilled" validate:"required,min=0"`
 	TotalAmount        float64  `json:"totalAmount" validate:"required,min=0"`
 	AveragePrice       float64  `json:"averagePrice" validate:"required,min=0"`
@@ -22,6 +26,10 @@ type AllocationServiceExecutionDTO struct {
 
 // NewAllocationServiceExecutionDTO maps a Fill to AllocationServiceExecutionDTO
 func NewAllocationServiceExecutionDTO(fill *Fill) *AllocationServiceExecutionDTO {
+	var lastFillTimestamp string
+	if fill.LastFilledTimestamp != 0 {
+		lastFillTimestamp = fill.GetLastFilledTime().UTC().Format(time.RFC3339Nano)
+	}
 	return &AllocationServiceExecutionDTO{
 		ExecutionServiceID: fill.ExecutionServiceID,
 		IsOpen:             false, // Only for completed trades
@@ -32,9 +40,9 @@ func NewAllocationServiceExecutionDTO(fill *Fill) *AllocationServiceExecutionDTO
 		Ticker:             fill.Ticker,
 		Quantity:           fill.Quantity,
 		LimitPrice:         nil, // Always null
-		ReceivedTimestamp:  fill.ReceivedTimestamp,
-		SentTimestamp:      fill.SentTimestamp,
-		LastFillTimestamp:  fill.LastFilledTimestamp,
+		ReceivedTimestamp:  fill.GetReceivedTime().UTC().Format(time.RFC3339Nano),
+		SentTimestamp:      fill.GetSentTime().UTC().Format(time.RFC3339Nano),
+		LastFillTimestamp:  lastFillTimestamp,
 		QuantityFilled:     fill.QuantityFilled,
 		TotalAmount:        fill.TotalAmount,
 		AveragePrice:       fill.AveragePrice,

@@ -279,6 +279,8 @@ func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, f
 
 // handleAllocationServiceCall handles the interaction with the Allocation Service
 func (cs *ConfirmationService) handleAllocationServiceCall(ctx context.Context, fill *domain.Fill) {
+	// TEMPORARY: Log the fill object before checking isOpen
+	cs.logger.WithContext(ctx).Info("AllocationServiceCall: fill object", zap.Any("fill", fill))
 	if !fill.IsOpen && cs.allocationClient != nil {
 		allocationDTO := domain.NewAllocationServiceExecutionDTO(fill)
 		err := cs.allocationClient.PostExecution(ctx, allocationDTO)
@@ -323,4 +325,16 @@ func (cs *ConfirmationService) GetStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// Add to ConfirmationService for debugging allocationClient wiring
+func (cs *ConfirmationService) HasAllocationClient() bool {
+	return cs.allocationClient != nil
+}
+
+func (cs *ConfirmationService) AllocationClientType() string {
+	if cs.allocationClient == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%T", cs.allocationClient)
 }

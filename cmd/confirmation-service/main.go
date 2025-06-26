@@ -123,6 +123,15 @@ func main() {
 		TracingProvider:   tracingProvider,
 	})
 
+	// Initialize Allocation Service client
+	allocationClient := service.NewAllocationServiceClient(service.AllocationServiceClientConfig{
+		AllocationService: cfg.AllocationService,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: resilienceManager,
+		TracingProvider:   tracingProvider,
+	})
+
 	// Initialize validation service
 	validationService := service.NewValidationService(service.ValidationConfig{
 		Logger: appLogger,
@@ -138,6 +147,7 @@ func main() {
 	// Initialize confirmation service (message handler)
 	confirmationService := service.NewConfirmationService(service.ConfirmationServiceConfig{
 		ExecutionClient:    executionClient,
+		AllocationClient:   allocationClient,
 		Logger:             appLogger,
 		Metrics:            appMetrics,
 		ResilienceManager:  resilienceManager,
@@ -145,6 +155,15 @@ func main() {
 		ValidationService:  validationService,
 		DuplicateDetection: duplicateDetection,
 	})
+
+	// TEMP LOG: Check allocationClient wiring
+	if confirmationService != nil {
+		if !confirmationService.HasAllocationClient() {
+			appLogger.WithContext(ctx).Warn("allocationClient is nil in ConfirmationService")
+		} else {
+			appLogger.WithContext(ctx).Info("allocationClient is wired", zap.String("type", confirmationService.AllocationClientType()))
+		}
+	}
 
 	// Initialize Kafka consumer
 	kafkaConsumer := service.NewKafkaConsumerService(service.KafkaConsumerConfig{

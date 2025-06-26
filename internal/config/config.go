@@ -129,7 +129,7 @@ func GetDefaults() *Config {
 			},
 		},
 		AllocationService: AllocationServiceConfig{
-			BaseURL:      "http://globeco-execution-service:8089",
+			BaseURL:      "http://globeco-allocation-service:8089",
 			Timeout:      10 * time.Second,
 			MaxRetries:   3,
 			RetryBackoff: 100 * time.Millisecond,

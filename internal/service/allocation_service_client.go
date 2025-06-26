@@ -63,7 +63,7 @@ func (asc *AllocationServiceClient) PostExecution(ctx context.Context, dto *doma
 	url := fmt.Sprintf("%s/api/v1/executions", asc.config.BaseURL)
 	correlationID := logger.GetCorrelationID(ctx)
 
-	asc.logger.WithContext(ctx).Debug("Posting execution to Allocation Service",
+	asc.logger.WithContext(ctx).Info("Posting execution to Allocation Service",
 		zap.String("url", url),
 		zap.Int64("execution_service_id", dto.ExecutionServiceID),
 	)
@@ -81,7 +81,7 @@ func (asc *AllocationServiceClient) PostExecution(ctx context.Context, dto *doma
 		}
 
 		// Marshal request body
-		requestBody, err := json.Marshal(dto)
+		requestBody, err := json.Marshal([]*domain.AllocationServiceExecutionDTO{dto})
 		if err != nil {
 			return domain.NewValidationError("invalid request", "failed to marshal allocation execution DTO").WithCorrelationID(correlationID)
 		}
