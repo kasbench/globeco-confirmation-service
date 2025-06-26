@@ -161,54 +161,68 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 		if cs.resilienceManager != nil {
 			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
 		}
-		// Continue to Allocation Service call regardless
-		return processingError
-	}
+		// Do NOT return here; continue to Allocation Service call
+	} else {
+		cs.logger.WithContext(ctx).Debug("Retrieved current execution",
+			zap.Int64("execution_service_id", fill.ExecutionServiceID),
+			zap.Int("current_version", execution.Version),
+			zap.String("current_status", execution.ExecutionStatus),
+			zap.Int64("current_quantity_filled", execution.QuantityFilled),
+		)
 
-	cs.logger.WithContext(ctx).Debug("Retrieved current execution",
-		zap.Int64("execution_service_id", fill.ExecutionServiceID),
-		zap.Int("current_version", execution.Version),
-		zap.String("current_status", execution.ExecutionStatus),
-		zap.Int64("current_quantity_filled", execution.QuantityFilled),
-	)
+		// Step 4: Business rule validation against current execution
+		if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
+			processingError = fmt.Errorf("fill message validation failed: %w", err)
+			cs.metrics.RecordMessageFailed()
+			execServiceFailed = true
+			// Add to DLQ for execution service failure
+			if cs.resilienceManager != nil {
+				_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+			}
+			// Do NOT return here; continue to Allocation Service call
+		} else {
+			// Step 5: Create update request using the current version
+			updateRequest := fill.ToUpdateRequest(execution.Version)
 
-	// Step 4: Business rule validation against current execution
-	if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
-		processingError = fmt.Errorf("fill message validation failed: %w", err)
-		cs.metrics.RecordMessageFailed()
-		execServiceFailed = true
-		// Add to DLQ for execution service failure
-		if cs.resilienceManager != nil {
-			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+			cs.logger.WithContext(ctx).Debug("Created update request",
+				zap.Int64("quantity_filled", updateRequest.QuantityFilled),
+				zap.Float64("average_price", updateRequest.AveragePrice),
+				zap.Int("version", updateRequest.Version),
+			)
+
+			// Step 6: Update execution in Execution Service
+			cs.logger.WithContext(ctx).Debug("Updating execution",
+				zap.Int64("execution_service_id", fill.ExecutionServiceID),
+			)
+
+			updateResponse, err := cs.executionClient.UpdateExecution(ctx, fill.ExecutionServiceID, updateRequest)
+			if err != nil {
+				processingError = fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
+				cs.metrics.RecordMessageFailed()
+				execServiceFailed = true
+				// Add to DLQ for execution service failure
+				if cs.resilienceManager != nil {
+					_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+				}
+				// Continue to Allocation Service call regardless
+			}
+
+			// Step 8: Log successful completion and record metrics (if execution service succeeded)
+			processingTime := time.Since(startTime)
+
+			if !execServiceFailed {
+				cs.logger.WithContext(ctx).Info("Successfully processed fill message",
+					zap.Int64("fill_id", fill.ID),
+					zap.Int64("execution_service_id", fill.ExecutionServiceID),
+					zap.Int("old_version", execution.Version),
+					zap.Int("new_version", updateResponse.Version),
+					zap.Duration("processing_time", processingTime),
+					zap.String("final_status", updateResponse.ExecutionStatus),
+				)
+				cs.metrics.RecordMessageProcessed()
+				cs.metrics.RecordMessageProcessingTime(processingTime)
+			}
 		}
-		// Continue to Allocation Service call regardless
-		return processingError
-	}
-
-	// Step 5: Create update request using the current version
-	updateRequest := fill.ToUpdateRequest(execution.Version)
-
-	cs.logger.WithContext(ctx).Debug("Created update request",
-		zap.Int64("quantity_filled", updateRequest.QuantityFilled),
-		zap.Float64("average_price", updateRequest.AveragePrice),
-		zap.Int("version", updateRequest.Version),
-	)
-
-	// Step 6: Update execution in Execution Service
-	cs.logger.WithContext(ctx).Debug("Updating execution",
-		zap.Int64("execution_service_id", fill.ExecutionServiceID),
-	)
-
-	updateResponse, err := cs.executionClient.UpdateExecution(ctx, fill.ExecutionServiceID, updateRequest)
-	if err != nil {
-		processingError = fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
-		cs.metrics.RecordMessageFailed()
-		execServiceFailed = true
-		// Add to DLQ for execution service failure
-		if cs.resilienceManager != nil {
-			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
-		}
-		// Continue to Allocation Service call regardless
 	}
 
 	// Step 7: Call Allocation Service for completed trades (isOpen == false)
@@ -225,22 +239,6 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 				_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, allocationDTO, "allocation-service failure", []error{err}, 1, map[string]interface{}{"service": "allocation-service"})
 			}
 		}
-	}
-
-	// Step 8: Log successful completion and record metrics (if execution service succeeded)
-	processingTime := time.Since(startTime)
-
-	if !execServiceFailed {
-		cs.logger.WithContext(ctx).Info("Successfully processed fill message",
-			zap.Int64("fill_id", fill.ID),
-			zap.Int64("execution_service_id", fill.ExecutionServiceID),
-			zap.Int("old_version", execution.Version),
-			zap.Int("new_version", updateResponse.Version),
-			zap.Duration("processing_time", processingTime),
-			zap.String("final_status", updateResponse.ExecutionStatus),
-		)
-		cs.metrics.RecordMessageProcessed()
-		cs.metrics.RecordMessageProcessingTime(processingTime)
 	}
 
 	if execServiceFailed {
