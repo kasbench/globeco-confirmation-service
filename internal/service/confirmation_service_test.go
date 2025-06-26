@@ -49,6 +49,16 @@ func (m *MockExecutionServiceClient) GetStats() map[string]interface{} {
 	return args.Get(0).(map[string]interface{})
 }
 
+// MockAllocationServiceClient is a mock implementation of AllocationServiceClientInterface
+type MockAllocationServiceClient struct {
+	mock.Mock
+}
+
+func (m *MockAllocationServiceClient) PostExecution(ctx context.Context, dto *domain.AllocationServiceExecutionDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
 func TestNewConfirmationService(t *testing.T) {
 	mockClient := &MockExecutionServiceClient{}
 	appLogger, err := logger.New(logger.Config{
@@ -538,4 +548,270 @@ func (m *MockResilienceManager) GetCircuitBreakerStats() utils.CircuitBreakerSta
 func (m *MockResilienceManager) GetDeadLetterQueueStats() utils.DeadLetterQueueStats {
 	args := m.Called()
 	return args.Get(0).(utils.DeadLetterQueueStats)
+}
+
+func (m *MockResilienceManager) AddToDeadLetterQueue(ctx context.Context, originalMessage interface{}, failureReason string, errorHistory []error, attemptCount int, metadata map[string]interface{}) error {
+	args := m.Called(ctx, originalMessage, failureReason, errorHistory, attemptCount, metadata)
+	return args.Error(0)
+}
+
+// Test: Successful Allocation Service call
+func TestConfirmationService_HandleFillMessage_AllocationSuccess(t *testing.T) {
+	mockExecClient := &MockExecutionServiceClient{}
+	mockAllocClient := &MockAllocationServiceClient{}
+	mockResilience := &MockResilienceManager{}
+	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
+	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+
+	service := NewConfirmationService(ConfirmationServiceConfig{
+		ExecutionClient:   mockExecClient,
+		AllocationClient:  mockAllocClient,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: mockResilience,
+	})
+
+	ctx := context.Background()
+	fill := &domain.Fill{
+		ID:                  1,
+		ExecutionServiceID:  2,
+		IsOpen:              false,
+		ExecutionStatus:     "FULL",
+		TradeType:           "BUY",
+		Destination:         "ML",
+		SecurityID:          "SEC1",
+		Ticker:              "IBM",
+		Quantity:            100,
+		ReceivedTimestamp:   1,
+		SentTimestamp:       2,
+		LastFilledTimestamp: 3,
+		QuantityFilled:      100,
+		AveragePrice:        10.0,
+		NumberOfFills:       1,
+		TotalAmount:         1000.0,
+		Version:             1,
+	}
+	execResp := &domain.ExecutionResponse{
+		ID:              2,
+		ExecutionStatus: "PARTIAL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC1",
+		Quantity:        100,
+		QuantityFilled:  50,
+		AveragePrice:    float64Ptr(9.0),
+		Version:         1,
+	}
+	updateResp := &domain.ExecutionUpdateResponse{
+		ID:              2,
+		ExecutionStatus: "FULL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC1",
+		Quantity:        100,
+		QuantityFilled:  100,
+		AveragePrice:    float64Ptr(10.0),
+		Version:         2,
+	}
+	mockExecClient.On("GetExecution", ctx, int64(2)).Return(execResp, nil)
+	mockExecClient.On("UpdateExecution", ctx, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	mockAllocClient.On("PostExecution", ctx, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(nil)
+
+	err := service.HandleFillMessage(ctx, fill)
+	assert.NoError(t, err)
+	mockExecClient.AssertExpectations(t)
+	mockAllocClient.AssertExpectations(t)
+}
+
+// Test: Allocation Service failure should add to DLQ
+func TestConfirmationService_HandleFillMessage_AllocationFailure_DLQ(t *testing.T) {
+	mockExecClient := &MockExecutionServiceClient{}
+	mockAllocClient := &MockAllocationServiceClient{}
+	mockResilience := &MockResilienceManager{}
+	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
+	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+
+	service := NewConfirmationService(ConfirmationServiceConfig{
+		ExecutionClient:   mockExecClient,
+		AllocationClient:  mockAllocClient,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: mockResilience,
+	})
+
+	ctx := context.Background()
+	fill := &domain.Fill{
+		ID:                  1,
+		ExecutionServiceID:  2,
+		IsOpen:              false,
+		ExecutionStatus:     "FULL",
+		TradeType:           "BUY",
+		Destination:         "ML",
+		SecurityID:          "SEC1",
+		Ticker:              "IBM",
+		Quantity:            100,
+		ReceivedTimestamp:   1,
+		SentTimestamp:       2,
+		LastFilledTimestamp: 3,
+		QuantityFilled:      100,
+		AveragePrice:        10.0,
+		NumberOfFills:       1,
+		TotalAmount:         1000.0,
+		Version:             1,
+	}
+	execResp := &domain.ExecutionResponse{
+		ID:              2,
+		ExecutionStatus: "PARTIAL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC1",
+		Quantity:        100,
+		QuantityFilled:  50,
+		AveragePrice:    float64Ptr(9.0),
+		Version:         1,
+	}
+	updateResp := &domain.ExecutionUpdateResponse{
+		ID:              2,
+		ExecutionStatus: "FULL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC1",
+		Quantity:        100,
+		QuantityFilled:  100,
+		AveragePrice:    float64Ptr(10.0),
+		Version:         2,
+	}
+	mockExecClient.On("GetExecution", ctx, int64(2)).Return(execResp, nil)
+	mockExecClient.On("UpdateExecution", ctx, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	mockAllocClient.On("PostExecution", ctx, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
+	mockResilience.On("AddToDeadLetterQueue", ctx, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
+		return meta["service"] == "allocation-service"
+	})).Return(nil)
+
+	err := service.HandleFillMessage(ctx, fill)
+	assert.NoError(t, err)
+	mockExecClient.AssertExpectations(t)
+	mockAllocClient.AssertExpectations(t)
+	mockResilience.AssertExpectations(t)
+}
+
+// Test: Both Execution and Allocation Service failures (should add two DLQ records)
+func TestConfirmationService_HandleFillMessage_BothFailures_DLQ(t *testing.T) {
+	mockExecClient := &MockExecutionServiceClient{}
+	mockAllocClient := &MockAllocationServiceClient{}
+	mockResilience := &MockResilienceManager{}
+	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
+	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+
+	service := NewConfirmationService(ConfirmationServiceConfig{
+		ExecutionClient:   mockExecClient,
+		AllocationClient:  mockAllocClient,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: mockResilience,
+	})
+
+	ctx := context.Background()
+	fill := &domain.Fill{
+		ID:                  1,
+		ExecutionServiceID:  2,
+		IsOpen:              false,
+		ExecutionStatus:     "FULL",
+		TradeType:           "BUY",
+		Destination:         "ML",
+		SecurityID:          "SEC1",
+		Ticker:              "IBM",
+		Quantity:            100,
+		ReceivedTimestamp:   1,
+		SentTimestamp:       2,
+		LastFilledTimestamp: 3,
+		QuantityFilled:      100,
+		AveragePrice:        10.0,
+		NumberOfFills:       1,
+		TotalAmount:         1000.0,
+		Version:             1,
+	}
+	execErr := assert.AnError
+	mockExecClient.On("GetExecution", ctx, int64(2)).Return(nil, execErr)
+	mockResilience.On("AddToDeadLetterQueue", ctx, fill, "execution-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
+		return meta["service"] == "execution-service"
+	})).Return(nil)
+	mockAllocClient.On("PostExecution", ctx, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
+	mockResilience.On("AddToDeadLetterQueue", ctx, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
+		return meta["service"] == "allocation-service"
+	})).Return(nil)
+
+	err := service.HandleFillMessage(ctx, fill)
+	assert.Error(t, err)
+	mockExecClient.AssertExpectations(t)
+	mockAllocClient.AssertExpectations(t)
+	mockResilience.AssertExpectations(t)
+}
+
+// Test: isOpen == true (should not call Allocation Service)
+func TestConfirmationService_HandleFillMessage_IsOpenTrue_NoAllocationCall(t *testing.T) {
+	mockExecClient := &MockExecutionServiceClient{}
+	mockAllocClient := &MockAllocationServiceClient{}
+	mockResilience := &MockResilienceManager{}
+	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
+	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+
+	service := NewConfirmationService(ConfirmationServiceConfig{
+		ExecutionClient:   mockExecClient,
+		AllocationClient:  mockAllocClient,
+		Logger:            appLogger,
+		Metrics:           appMetrics,
+		ResilienceManager: mockResilience,
+	})
+
+	ctx := context.Background()
+	fill := &domain.Fill{
+		ID:                  1,
+		ExecutionServiceID:  2,
+		IsOpen:              true, // Not completed
+		ExecutionStatus:     "PARTIAL",
+		TradeType:           "BUY",
+		Destination:         "ML",
+		SecurityID:          "SEC1",
+		Ticker:              "IBM",
+		Quantity:            100,
+		ReceivedTimestamp:   1,
+		SentTimestamp:       2,
+		LastFilledTimestamp: 3,
+		QuantityFilled:      50,
+		AveragePrice:        9.0,
+		NumberOfFills:       1,
+		TotalAmount:         450.0,
+		Version:             1,
+	}
+	execResp := &domain.ExecutionResponse{
+		ID:              2,
+		ExecutionStatus: "PARTIAL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC1",
+		Quantity:        100,
+		QuantityFilled:  50,
+		AveragePrice:    float64Ptr(9.0),
+		Version:         1,
+	}
+	updateResp := &domain.ExecutionUpdateResponse{
+		ID:              2,
+		ExecutionStatus: "PARTIAL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC1",
+		Quantity:        100,
+		QuantityFilled:  50,
+		AveragePrice:    float64Ptr(9.0),
+		Version:         2,
+	}
+	mockExecClient.On("GetExecution", ctx, int64(2)).Return(execResp, nil)
+	mockExecClient.On("UpdateExecution", ctx, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	// AllocationServiceClient should NOT be called
+
+	err := service.HandleFillMessage(ctx, fill)
+	assert.NoError(t, err)
+	mockExecClient.AssertExpectations(t)
+	mockAllocClient.AssertNotCalled(t, "PostExecution", mock.Anything, mock.Anything)
 }

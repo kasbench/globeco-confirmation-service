@@ -275,3 +275,8 @@ func GetDefaultResilienceConfig() ResilienceConfig {
 		},
 	}
 }
+
+// AddToDeadLetterQueue adds a message to the dead letter queue
+func (rm *ResilienceManager) AddToDeadLetterQueue(ctx context.Context, originalMessage interface{}, failureReason string, errorHistory []error, attemptCount int, metadata map[string]interface{}) error {
+	return rm.deadLetterQueue.Add(ctx, originalMessage, failureReason, errorHistory, attemptCount, metadata)
+}

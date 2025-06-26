@@ -19,6 +19,7 @@ type ExecutionServiceClientInterface interface {
 type ResilienceManagerInterface interface {
 	GetCircuitBreakerStats() utils.CircuitBreakerStats
 	GetDeadLetterQueueStats() utils.DeadLetterQueueStats
+	AddToDeadLetterQueue(ctx context.Context, originalMessage interface{}, failureReason string, errorHistory []error, attemptCount int, metadata map[string]interface{}) error
 }
 
 // KafkaConsumerInterface defines the interface for the Kafka consumer

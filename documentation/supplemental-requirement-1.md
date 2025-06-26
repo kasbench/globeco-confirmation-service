@@ -78,12 +78,12 @@ Phase 2
 - [x] Log all Allocation Service call attempts and failures with correlation IDs
 
 Phase 3
-- [ ] Update error handling to match requirements.md (retry, circuit breaker, DLQ)
-- [ ] Ensure dead letter queue handling is separate for Execution and Allocation Service failures, with clear identification
+- [x] Update error handling to match requirements.md (retry, circuit breaker, DLQ)
+- [x] Ensure dead letter queue handling is separate for Execution and Allocation Service failures, with clear identification
 
 Phase 4
-- [ ] Add/extend unit tests for new logic and error scenarios
-- [ ] Update integration tests to cover Allocation Service flow
+- [x] Add/extend unit tests for new logic and error scenarios
+- [x] Update integration tests to cover Allocation Service flow
 
 Phase 5
 - [ ] Update documentation and runbooks
