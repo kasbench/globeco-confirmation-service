@@ -7,14 +7,15 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	HTTP             HTTPConfig             `mapstructure:"http"`
-	Kafka            KafkaConfig            `mapstructure:"kafka"`
-	ExecutionService ExecutionServiceConfig `mapstructure:"execution_service"`
-	Logging          LoggingConfig          `mapstructure:"logging"`
-	Metrics          MetricsConfig          `mapstructure:"metrics"`
-	Tracing          TracingConfig          `mapstructure:"tracing"`
-	Performance      PerformanceConfig      `mapstructure:"performance"`
-	Health           HealthConfig           `mapstructure:"health"`
+	HTTP              HTTPConfig              `mapstructure:"http"`
+	Kafka             KafkaConfig             `mapstructure:"kafka"`
+	ExecutionService  ExecutionServiceConfig  `mapstructure:"execution_service"`
+	AllocationService AllocationServiceConfig `mapstructure:"allocation_service"`
+	Logging           LoggingConfig           `mapstructure:"logging"`
+	Metrics           MetricsConfig           `mapstructure:"metrics"`
+	Tracing           TracingConfig           `mapstructure:"tracing"`
+	Performance       PerformanceConfig       `mapstructure:"performance"`
+	Health            HealthConfig            `mapstructure:"health"`
 }
 
 // HTTPConfig represents HTTP server configuration
@@ -40,6 +41,15 @@ type KafkaConfig struct {
 
 // ExecutionServiceConfig represents Execution Service configuration
 type ExecutionServiceConfig struct {
+	BaseURL        string               `mapstructure:"base_url" validate:"required,url"`
+	Timeout        time.Duration        `mapstructure:"timeout" validate:"required"`
+	MaxRetries     int                  `mapstructure:"max_retries" validate:"required,min=0"`
+	RetryBackoff   time.Duration        `mapstructure:"retry_backoff" validate:"required"`
+	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
+}
+
+// AllocationServiceConfig represents Allocation Service configuration
+type AllocationServiceConfig struct {
 	BaseURL        string               `mapstructure:"base_url" validate:"required,url"`
 	Timeout        time.Duration        `mapstructure:"timeout" validate:"required"`
 	MaxRetries     int                  `mapstructure:"max_retries" validate:"required,min=0"`
@@ -118,6 +128,16 @@ func GetDefaults() *Config {
 				Timeout:          30 * time.Second,
 			},
 		},
+		AllocationService: AllocationServiceConfig{
+			BaseURL:      "http://globeco-execution-service:8089",
+			Timeout:      10 * time.Second,
+			MaxRetries:   3,
+			RetryBackoff: 100 * time.Millisecond,
+			CircuitBreaker: CircuitBreakerConfig{
+				FailureThreshold: 5,
+				Timeout:          30 * time.Second,
+			},
+		},
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
@@ -177,6 +197,15 @@ func (c *Config) Validate() error {
 
 	if c.ExecutionService.CircuitBreaker.FailureThreshold < 1 {
 		return fmt.Errorf("execution_service.circuit_breaker.failure_threshold must be at least 1")
+	}
+
+	// Validate Allocation Service configuration
+	if c.AllocationService.BaseURL == "" {
+		return fmt.Errorf("allocation_service.base_url is required")
+	}
+
+	if c.AllocationService.CircuitBreaker.FailureThreshold < 1 {
+		return fmt.Errorf("allocation_service.circuit_breaker.failure_threshold must be at least 1")
 	}
 
 	// Validate Logging configuration

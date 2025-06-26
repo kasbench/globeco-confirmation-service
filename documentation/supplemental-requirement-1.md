@@ -68,15 +68,14 @@ Phase 0
 - [x] Review and clarify requirements with stakeholders
 
 Phase 1
-
-- [ ] Define/update domain models and DTOs for Allocation Service integration
-- [ ] Implement mapping logic from fill message to Allocation Service DTO
-- [ ] Implement HTTP client for Allocation Service (with retry, circuit breaker, and timeout)
+- [x] Define/update domain models and DTOs for Allocation Service integration
+- [x] Implement mapping logic from fill message to Allocation Service DTO
+- [x] Implement HTTP client for Allocation Service (with retry, circuit breaker, and timeout)
 
 Phase 2
-- [ ] Integrate Allocation Service call into message processing flow (after Execution Service call)
-- [ ] Ensure Allocation Service call is attempted even if Execution Service call fails
-- [ ] Log all Allocation Service call attempts and failures with correlation IDs
+- [x] Integrate Allocation Service call into message processing flow (after Execution Service call)
+- [x] Ensure Allocation Service call is attempted even if Execution Service call fails
+- [x] Log all Allocation Service call attempts and failures with correlation IDs
 
 Phase 3
 - [ ] Update error handling to match requirements.md (retry, circuit breaker, DLQ)
