@@ -16,12 +16,24 @@ kafka:
   topic: "fills"
   consumer_group: "globeco-confirmation-service"
   consumer_timeout: "30s"
+  connection_timeout: "10s"
+  fetch_timeout: "15s"  # Increased from default 5s to handle longer processing times
   max_retries: 3
   retry_backoff: "100ms"
 
 # Execution Service Configuration
 execution_service:
   base_url: "http://globeco-execution-service:8084"
+  timeout: "10s"
+  max_retries: 3
+  retry_backoff: "100ms"
+  circuit_breaker:
+    failure_threshold: 5
+    timeout: "30s"
+
+# Allocation Service Configuration
+allocation_service:
+  base_url: "http://globeco-allocation-service:8089"
   timeout: "10s"
   max_retries: 3
   retry_backoff: "100ms"

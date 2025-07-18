@@ -70,8 +70,15 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 	cs.logger.WithContext(ctx).Info("Processing fill message", zap.Int64("fill_id", fill.ID))
 
 	// Start tracing span
-	ctx, span := cs.tracingProvider.StartSpan(ctx, "handle_fill_message")
-	defer span.End()
+	var span interface{}
+	if cs.tracingProvider != nil {
+		ctx, span = cs.tracingProvider.StartSpan(ctx, "handle_fill_message")
+		defer func() {
+			if s, ok := span.(interface{ End() }); ok {
+				s.End()
+			}
+		}()
+	}
 
 	// Defer recording the processing result for duplicate detection
 	defer func() {
