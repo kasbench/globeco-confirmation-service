@@ -243,7 +243,8 @@ func (esc *ExecutionServiceClient) IsHealthy(ctx context.Context) bool {
 	healthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	url := fmt.Sprintf("%s/health", esc.config.BaseURL)
+	// Use the Spring Boot Actuator health endpoint
+	url := fmt.Sprintf("%s/actuator/health/liveness", esc.config.BaseURL)
 
 	req, err := http.NewRequestWithContext(healthCtx, "GET", url, nil)
 	if err != nil {
@@ -261,11 +262,15 @@ func (esc *ExecutionServiceClient) IsHealthy(ctx context.Context) bool {
 	}
 	defer resp.Body.Close()
 
-	// Consider 200-299 as healthy
+	// Consider 200-299 as healthy (even if empty list)
 	healthy := resp.StatusCode >= 200 && resp.StatusCode < 300
 
 	if !healthy {
 		esc.logger.WithContext(ctx).Warn("Execution Service health check returned unhealthy status",
+			zap.Int("status_code", resp.StatusCode),
+		)
+	} else {
+		esc.logger.WithContext(ctx).Debug("Execution Service health check passed",
 			zap.Int("status_code", resp.StatusCode),
 		)
 	}

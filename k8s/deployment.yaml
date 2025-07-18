@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: globeco-confirmation-service
+  namespace: globeco
+  labels:
+    app: globeco-confirmation-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globeco-confirmation-service
+  template:
+    metadata:
+      labels:
+        app: globeco-confirmation-service
+    spec:
+      containers:
+        - name: globeco-confirmation-service
+          image: kasbench/globeco-confirmation-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8086
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 1000m
+              memory: 1000Mi
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 240
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 240
+            failureThreshold: 3
+          # startupProbe:
+          #   httpGet:
+          #     path: /healthz
+          #     port: 8080
+          #   initialDelaySeconds: 5
+          #   periodSeconds: 10
+          #   timeoutSeconds: 5
+          #   failureThreshold: 30
