@@ -14,6 +14,10 @@ spec:
     metadata:
       labels:
         app: globeco-confirmation-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8086"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: globeco-confirmation-service
@@ -21,6 +25,23 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8086
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: "globeco-confirmation-service"
+            - name: OTEL_SERVICE_VERSION
+              value: "1.0.0"
+            - name: OTEL_SERVICE_NAMESPACE
+              value: "globeco"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "otel-collector-collector.monitoring.svc.cluster.local:4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.name=globeco-confirmation-service,service.version=1.0.0,service.namespace=globeco"
+            - name: TRACING_ENABLED
+              value: "true"
+            - name: METRICS_ENABLED
+              value: "true"
           resources:
             requests:
               cpu: 100m

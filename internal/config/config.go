@@ -83,6 +83,7 @@ type TracingConfig struct {
 	ServiceName    string `mapstructure:"service_name" validate:"required"`
 	ServiceVersion string `mapstructure:"service_version" validate:"required"`
 	Exporter       string `mapstructure:"exporter" validate:"required,oneof=stdout jaeger otlp"`
+	OTLPEndpoint   string `mapstructure:"otlp_endpoint"`
 }
 
 // PerformanceConfig represents performance configuration
@@ -111,7 +112,7 @@ func GetDefaults() *Config {
 		Kafka: KafkaConfig{
 			Brokers:           []string{"globeco-execution-service-kafka:9092"},
 			Topic:             "fills",
-			ConsumerGroup:     "confirmation-service",
+			ConsumerGroup:     "globeco-confirmation-service",
 			ConsumerTimeout:   30 * time.Second,
 			ConnectionTimeout: 10 * time.Second,
 			FetchTimeout:      5 * time.Second,
@@ -150,9 +151,10 @@ func GetDefaults() *Config {
 		},
 		Tracing: TracingConfig{
 			Enabled:        true,
-			ServiceName:    "confirmation-service",
+			ServiceName:    "globeco-confirmation-service",
 			ServiceVersion: "1.0.0",
-			Exporter:       "stdout",
+			Exporter:       "otlp",
+			OTLPEndpoint:   "otel-collector-collector.monitoring.svc.cluster.local:4317",
 		},
 		Performance: PerformanceConfig{
 			MaxConcurrentRequests: 10,

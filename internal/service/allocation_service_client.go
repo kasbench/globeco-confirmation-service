@@ -14,6 +14,7 @@ import (
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 )
 
@@ -39,15 +40,23 @@ type AllocationServiceClientConfig struct {
 }
 
 func NewAllocationServiceClient(cfg AllocationServiceClientConfig) *AllocationServiceClient {
-	httpClient := &http.Client{
-		Timeout: cfg.AllocationService.Timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-		},
+	// Create base transport
+	baseTransport := &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
 	}
+
+	// Wrap transport with OpenTelemetry instrumentation
+	instrumentedTransport := otelhttp.NewTransport(baseTransport)
+
+	// Create HTTP client with timeout and instrumented transport
+	httpClient := &http.Client{
+		Timeout:   cfg.AllocationService.Timeout,
+		Transport: instrumentedTransport,
+	}
+
 	return &AllocationServiceClient{
 		config:            cfg.AllocationService,
 		httpClient:        httpClient,

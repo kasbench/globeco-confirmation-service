@@ -98,7 +98,7 @@ func (h *Handlers) LivenessHandler(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
 		Status:    "UP",
 		Timestamp: time.Now(),
-		Service:   "confirmation-service",
+		Service:   "globeco-confirmation-service",
 		Version:   "1.0.0", // TODO: Get from build info
 		Uptime:    time.Since(h.startTime).String(),
 		Message:   "Service is alive and running",
@@ -188,7 +188,7 @@ func (h *Handlers) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
 		Status:    overallStatus,
 		Timestamp: time.Now(),
-		Service:   "confirmation-service",
+		Service:   "globeco-confirmation-service",
 		Version:   "1.0.0", // TODO: Get from build info
 		Uptime:    time.Since(h.startTime).String(),
 		Checks:    checks,
@@ -237,7 +237,7 @@ func (h *Handlers) StatsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Add confirmation service stats
 	if h.confirmationService != nil {
-		stats["confirmation_service"] = h.confirmationService.GetStats()
+		stats["globeco-confirmation_service"] = h.confirmationService.GetStats()
 	}
 
 	// Add Kafka consumer stats
@@ -252,7 +252,7 @@ func (h *Handlers) StatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := StatsResponse{
-		Service:     "confirmation-service",
+		Service:     "globeco-confirmation-service",
 		Timestamp:   time.Now(),
 		Uptime:      time.Since(h.startTime).String(),
 		Version:     "1.0.0", // TODO: Get from build info
@@ -279,7 +279,7 @@ func (h *Handlers) VersionHandler(w http.ResponseWriter, r *http.Request) {
 	correlationID := logger.GetCorrelationID(ctx)
 
 	response := map[string]interface{}{
-		"service":    "confirmation-service",
+		"service":    "globeco-confirmation-service",
 		"version":    "1.0.0",                // TODO: Get from build info
 		"build_time": "2025-01-27T00:00:00Z", // TODO: Get from build info
 		"git_commit": "unknown",              // TODO: Get from build info

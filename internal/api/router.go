@@ -9,6 +9,7 @@ import (
 	custommiddleware "github.com/kasbench/globeco-confirmation-service/internal/middleware"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // RouterConfig represents the configuration for the HTTP router
@@ -27,6 +28,11 @@ func NewRouter(config RouterConfig) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+
+	// Add OpenTelemetry HTTP instrumentation middleware
+	r.Use(func(next http.Handler) http.Handler {
+		return otelhttp.NewHandler(next, "globeco-confirmation-service")
+	})
 
 	// Add custom middleware
 	if config.Logger != nil {

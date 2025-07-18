@@ -7,11 +7,14 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // TracingConfig represents tracing configuration
@@ -20,6 +23,7 @@ type TracingConfig struct {
 	ServiceName    string
 	ServiceVersion string
 	Exporter       string // stdout, jaeger, otlp
+	OTLPEndpoint   string
 }
 
 // TracingProvider wraps the OpenTelemetry tracer provider
@@ -48,8 +52,13 @@ func NewTracingProvider(config TracingConfig) (*TracingProvider, error) {
 		// TODO: Implement Jaeger exporter when needed
 		return nil, fmt.Errorf("jaeger exporter not implemented yet")
 	case "otlp":
-		// TODO: Implement OTLP exporter when needed
-		return nil, fmt.Errorf("otlp exporter not implemented yet")
+		exporter, err = otlptracegrpc.New(context.Background(),
+			otlptracegrpc.WithEndpoint(config.OTLPEndpoint),
+			otlptracegrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported exporter: %s", config.Exporter)
 	}
@@ -78,6 +87,7 @@ func createResource(serviceName, serviceVersion string) *resource.Resource {
 		semconv.SchemaURL,
 		semconv.ServiceName(serviceName),
 		semconv.ServiceVersion(serviceVersion),
+		semconv.ServiceNamespace("globeco"),
 	)
 }
 

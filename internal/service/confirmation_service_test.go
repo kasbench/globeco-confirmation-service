@@ -538,7 +538,7 @@ func TestConfirmationService_GetStats(t *testing.T) {
 
 	stats := service.GetStats()
 
-	assert.Equal(t, "confirmation-service", stats["service_name"])
+	assert.Equal(t, "globeco-confirmation-service", stats["service_name"])
 	assert.Equal(t, expectedClientStats, stats["execution_client"])
 	assert.Equal(t, expectedCBStats, stats["circuit_breaker"])
 	assert.Equal(t, expectedDLQStats, stats["dead_letter_queue"])

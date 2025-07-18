@@ -14,6 +14,7 @@ import (
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 )
 
@@ -38,15 +39,21 @@ type ExecutionServiceClientConfig struct {
 
 // NewExecutionServiceClient creates a new Execution Service client
 func NewExecutionServiceClient(config ExecutionServiceClientConfig) *ExecutionServiceClient {
-	// Create HTTP client with timeout
+	// Create base transport
+	baseTransport := &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
+	}
+
+	// Wrap transport with OpenTelemetry instrumentation
+	instrumentedTransport := otelhttp.NewTransport(baseTransport)
+
+	// Create HTTP client with timeout and instrumented transport
 	httpClient := &http.Client{
-		Timeout: config.ExecutionService.Timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-		},
+		Timeout:   config.ExecutionService.Timeout,
+		Transport: instrumentedTransport,
 	}
 
 	return &ExecutionServiceClient{

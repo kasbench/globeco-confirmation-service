@@ -305,7 +305,7 @@ func (cs *ConfirmationService) IsHealthy(ctx context.Context) bool {
 // GetStats returns service statistics
 func (cs *ConfirmationService) GetStats() map[string]interface{} {
 	stats := map[string]interface{}{
-		"service_name": "confirmation-service",
+		"service_name": "globeco-confirmation-service",
 	}
 
 	// Add execution client stats

@@ -15,6 +15,7 @@ import (
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
+	"github.com/kasbench/globeco-confirmation-service/pkg/otelmetrics"
 	"go.uber.org/zap"
 )
 
@@ -42,16 +43,26 @@ func main() {
 		Enabled:   cfg.Metrics.Enabled,
 	})
 
-	// Initialize tracing
-	tracingProvider, err := utils.NewTracingProvider(utils.TracingConfig{
-		Enabled:        cfg.Tracing.Enabled,
-		ServiceName:    cfg.Tracing.ServiceName,
-		ServiceVersion: cfg.Tracing.ServiceVersion,
-		Exporter:       cfg.Tracing.Exporter,
+	// Initialize OpenTelemetry metrics (additional metrics for OTLP export)
+	otelMetrics := otelmetrics.New(otelmetrics.Config{
+		ServiceName: "globeco-confirmation-service", // Consistent naming with other microservices
+		Enabled:     cfg.Metrics.Enabled,
+	})
+
+	// Initialize OpenTelemetry following GlobeCo standards
+	otelShutdown, err := utils.SetupOTel(context.Background(), utils.OTelConfig{
+		ServiceName:      "globeco-confirmation-service", // Consistent naming with other microservices
+		ServiceVersion:   cfg.Tracing.ServiceVersion,
+		ServiceNamespace: "globeco",
+		OTLPEndpoint:     cfg.Tracing.OTLPEndpoint,
+		Enabled:          cfg.Tracing.Enabled,
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize tracing: %v", err)
+		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
 	}
+
+	// Note: Tracing is now handled by the OpenTelemetry setup above
+	// The old TracingProvider is no longer needed as SetupOTel handles everything
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -60,6 +71,22 @@ func main() {
 	// Generate correlation ID for startup
 	correlationID := logger.GenerateCorrelationID()
 	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
+
+	// Start background system metrics collection for OpenTelemetry
+	if otelMetrics.IsEnabled() {
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					otelMetrics.UpdateSystemMetrics(context.Background())
+				}
+			}
+		}()
+	}
 
 	appLogger.WithContext(ctx).Info("Starting GlobeCo Confirmation Service",
 		zap.String("service", cfg.Tracing.ServiceName),
@@ -120,7 +147,7 @@ func main() {
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
-		TracingProvider:   tracingProvider,
+		TracingProvider:   nil, // Using global OpenTelemetry tracer now
 	})
 
 	// Initialize Allocation Service client
@@ -129,7 +156,7 @@ func main() {
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
-		TracingProvider:   tracingProvider,
+		TracingProvider:   nil, // Using global OpenTelemetry tracer now
 	})
 
 	// Initialize validation service
@@ -151,7 +178,7 @@ func main() {
 		Logger:             appLogger,
 		Metrics:            appMetrics,
 		ResilienceManager:  resilienceManager,
-		TracingProvider:    tracingProvider,
+		TracingProvider:    nil, // Using global OpenTelemetry tracer now
 		ValidationService:  validationService,
 		DuplicateDetection: duplicateDetection,
 	})
@@ -171,7 +198,7 @@ func main() {
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
-		TracingProvider:   tracingProvider,
+		TracingProvider:   nil, // Using global OpenTelemetry tracer now
 		MessageHandler:    confirmationService,
 	})
 
@@ -233,12 +260,12 @@ func main() {
 		appLogger.WithContext(shutdownCtx).Error("Error stopping HTTP server", zap.Error(err))
 	}
 
-	// Shutdown tracing provider
-	if tracingProvider != nil {
-		if err := tracingProvider.Shutdown(shutdownCtx); err != nil {
-			appLogger.WithContext(shutdownCtx).Error("Error shutting down tracing provider", zap.Error(err))
-		}
+	// Shutdown OpenTelemetry
+	if err := otelShutdown(shutdownCtx); err != nil {
+		appLogger.WithContext(shutdownCtx).Error("Error shutting down OpenTelemetry", zap.Error(err))
 	}
+
+	// Note: Tracing provider shutdown is now handled by OpenTelemetry shutdown above
 
 	select {
 	case <-shutdownCtx.Done():

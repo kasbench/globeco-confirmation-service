@@ -5,11 +5,16 @@ metadata:
   namespace: globeco
   labels:
     app: globeco-confirmation-service
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8086"
+    prometheus.io/path: "/metrics"
 spec:
   selector:
     app: globeco-confirmation-service
   ports:
-    - protocol: TCP
-      port: 80
+    - name: http
+      protocol: TCP
+      port: 8086
       targetPort: 8086
   type: ClusterIP 

@@ -14,7 +14,7 @@ kafka:
   brokers:
     - "globeco-execution-service-kafka:9092"
   topic: "fills"
-  consumer_group: "confirmation-service"
+  consumer_group: "globeco-confirmation-service"
   consumer_timeout: "30s"
   max_retries: 3
   retry_backoff: "100ms"
@@ -22,6 +22,16 @@ kafka:
 # Execution Service Configuration
 execution_service:
   base_url: "http://globeco-execution-service:8084"
+  timeout: "10s"
+  max_retries: 3
+  retry_backoff: "100ms"
+  circuit_breaker:
+    failure_threshold: 5
+    timeout: "30s"
+
+# Allocation Service Configuration
+allocation_service:
+  base_url: "http://globeco-allocation-service:8089"
   timeout: "10s"
   max_retries: 3
   retry_backoff: "100ms"
@@ -44,9 +54,10 @@ metrics:
 # Tracing Configuration
 tracing:
   enabled: true
-  service_name: "confirmation-service"
+  service_name: "globeco-confirmation-service"
   service_version: "1.0.0"
-  exporter: "stdout"  # stdout, jaeger, otlp
+  exporter: "otlp"  # stdout, jaeger, otlp
+  otlp_endpoint: "otel-collector-collector.monitoring.svc.cluster.local:4317"
 
 # Performance Configuration
 performance:

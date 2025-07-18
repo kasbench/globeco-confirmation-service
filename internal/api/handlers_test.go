@@ -106,7 +106,7 @@ func TestLivenessHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "UP", response.Status)
-	assert.Equal(t, "confirmation-service", response.Service)
+	assert.Equal(t, "globeco-confirmation-service", response.Service)
 	assert.Equal(t, "1.0.0", response.Version)
 	assert.Equal(t, "Service is alive and running", response.Message)
 	assert.Equal(t, "test-correlation-id", response.RequestID)
@@ -206,7 +206,7 @@ func TestStatsHandler(t *testing.T) {
 
 	// Mock stats
 	confirmationStats := map[string]interface{}{
-		"service_name": "confirmation-service",
+		"service_name": "globeco-confirmation-service",
 		"processed":    100,
 	}
 	kafkaStats := map[string]interface{}{
@@ -230,11 +230,11 @@ func TestStatsHandler(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, "confirmation-service", response.Service)
+	assert.Equal(t, "globeco-confirmation-service", response.Service)
 	assert.Equal(t, "1.0.0", response.Version)
 	assert.Equal(t, "development", response.Environment)
 	assert.Equal(t, "test-correlation-id", response.RequestID)
-	assert.Contains(t, response.Stats, "confirmation_service")
+	assert.Contains(t, response.Stats, "globeco-confirmation_service")
 	assert.Contains(t, response.Stats, "kafka_consumer")
 	assert.Contains(t, response.Stats, "runtime")
 
@@ -258,7 +258,7 @@ func TestVersionHandler(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, "confirmation-service", response["service"])
+	assert.Equal(t, "globeco-confirmation-service", response["service"])
 	assert.Equal(t, "1.0.0", response["version"])
 	assert.Equal(t, "1.23.4", response["go_version"])
 	assert.Equal(t, "test-correlation-id", response["request_id"])

@@ -14,7 +14,7 @@ kafka:
   brokers:
     - "globeco-execution-service-kafka:9092"
   topic: "fills"
-  consumer_group: "confirmation-service"
+  consumer_group: "globeco-confirmation-service"
   consumer_timeout: "30s"
   max_retries: 3
   retry_backoff: "100ms"
@@ -44,7 +44,7 @@ metrics:
 # Tracing Configuration
 tracing:
   enabled: true
-  service_name: "confirmation-service"
+  service_name: "globeco-confirmation-service"
   service_version: "1.0.0"
   exporter: "stdout"  # stdout, jaeger, otlp
 

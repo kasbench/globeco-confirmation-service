@@ -197,7 +197,7 @@ The Comfirmation microservice performs the following in a continuous loop.
 - **Required Fields**: Every log entry must include:
   - `timestamp` (ISO 8601 format)
   - `level` (DEBUG, INFO, WARN, ERROR)
-  - `service` ("confirmation-service")
+  - `service` ("globeco-confirmation-service")
   - `correlationId` (for request tracing)
   - `message` (human-readable description)
 - **Request Logging**: Log every Kafka message received and API call made

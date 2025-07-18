@@ -20,7 +20,7 @@ func TestGetDefaults(t *testing.T) {
 	// Test Kafka defaults
 	assert.Equal(t, []string{"globeco-execution-service-kafka:9092"}, config.Kafka.Brokers)
 	assert.Equal(t, "fills", config.Kafka.Topic)
-	assert.Equal(t, "confirmation-service", config.Kafka.ConsumerGroup)
+	assert.Equal(t, "globeco-confirmation-service", config.Kafka.ConsumerGroup)
 	assert.Equal(t, 30*time.Second, config.Kafka.ConsumerTimeout)
 	assert.Equal(t, 3, config.Kafka.MaxRetries)
 	assert.Equal(t, 100*time.Millisecond, config.Kafka.RetryBackoff)
@@ -45,9 +45,10 @@ func TestGetDefaults(t *testing.T) {
 
 	// Test Tracing defaults
 	assert.True(t, config.Tracing.Enabled)
-	assert.Equal(t, "confirmation-service", config.Tracing.ServiceName)
+	assert.Equal(t, "globeco-confirmation-service", config.Tracing.ServiceName)
 	assert.Equal(t, "1.0.0", config.Tracing.ServiceVersion)
-	assert.Equal(t, "stdout", config.Tracing.Exporter)
+	assert.Equal(t, "otlp", config.Tracing.Exporter)
+	assert.Equal(t, "otel-collector-collector.monitoring.svc.cluster.local:4317", config.Tracing.OTLPEndpoint)
 
 	// Test Performance defaults
 	assert.Equal(t, 10, config.Performance.MaxConcurrentRequests)
