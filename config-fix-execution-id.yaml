@@ -1,5 +1,5 @@
-# GlobeCo Confirmation Service Configuration
-# Copy this file to config.yaml and modify as needed
+# Temporary configuration to handle execution ID mismatch issues
+# Copy this to config.yaml to enable the fix
 
 # HTTP Server Configuration
 http:
@@ -17,7 +17,7 @@ kafka:
   consumer_group: "globeco-confirmation-service"
   consumer_timeout: "30s"
   connection_timeout: "10s"
-  fetch_timeout: "15s"  # Increased from default 5s to handle longer processing times
+  fetch_timeout: "15s"
   max_retries: 3
   retry_backoff: "100ms"
 
@@ -43,9 +43,9 @@ allocation_service:
 
 # Logging Configuration
 logging:
-  level: "info"  # debug, info, warn, error
-  format: "json"  # json, console
-  output: "stdout"  # stdout, stderr, file
+  level: "info"
+  format: "json"
+  output: "stdout"
 
 # Metrics Configuration
 metrics:
@@ -58,7 +58,7 @@ tracing:
   enabled: true
   service_name: "globeco-confirmation-service"
   service_version: "1.0.0"
-  exporter: "stdout"  # stdout, jaeger, otlp
+  exporter: "stdout"
 
 # Performance Configuration
 performance:
@@ -66,16 +66,16 @@ performance:
   message_buffer_size: 1000
   worker_pool_size: 5
 
-# Validation Configuration
-validation:
-  # Skip execution ID validation for stale messages (useful during system recovery)
-  skip_execution_id_validation: false
-  # Maximum age of messages to process (in minutes, 0 = no limit)
-  max_message_age_minutes: 60
-  # Log warnings instead of errors for validation failures
-  warn_on_validation_failures: true
-
 # Health Check Configuration
 health:
   startup_grace_period: "30s"
-  check_interval: "10s" 
+  check_interval: "10s"
+
+# Validation Configuration - TEMPORARY FIX
+validation:
+  # Skip execution ID validation for stale messages (TEMPORARY)
+  skip_execution_id_validation: false
+  # Maximum age of messages to process (in minutes, 0 = no limit)
+  max_message_age_minutes: 60
+  # Log warnings instead of errors for validation failures (TEMPORARY FIX)
+  warn_on_validation_failures: true

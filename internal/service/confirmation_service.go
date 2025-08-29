@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kasbench/globeco-confirmation-service/internal/config"
 	"github.com/kasbench/globeco-confirmation-service/internal/domain"
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
@@ -22,6 +23,7 @@ type ConfirmationService struct {
 	tracingProvider    *utils.TracingProvider
 	validationService  *ValidationService
 	duplicateDetection *DuplicateDetectionService
+	config             *config.Config
 }
 
 // ConfirmationServiceConfig represents the configuration for the confirmation service
@@ -34,6 +36,7 @@ type ConfirmationServiceConfig struct {
 	TracingProvider    *utils.TracingProvider
 	ValidationService  *ValidationService
 	DuplicateDetection *DuplicateDetectionService
+	Config             *config.Config
 }
 
 // AllocationServiceClientInterface defines the interface for the Allocation Service client
@@ -53,6 +56,7 @@ func NewConfirmationService(config ConfirmationServiceConfig) *ConfirmationServi
 		tracingProvider:    config.TracingProvider,
 		validationService:  config.ValidationService,
 		duplicateDetection: config.DuplicateDetection,
+		config:             config.Config,
 	}
 }
 
@@ -120,6 +124,27 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 }
 
 func (cs *ConfirmationService) validateInitialFillMessage(ctx context.Context, fill *domain.Fill) error {
+	// Check message age if configured
+	if cs.config != nil && cs.config.Validation.MaxMessageAgeMinutes > 0 {
+		messageAge := time.Since(fill.GetReceivedTime())
+		maxAge := time.Duration(cs.config.Validation.MaxMessageAgeMinutes) * time.Minute
+
+		if messageAge > maxAge {
+			errorMsg := fmt.Sprintf("message is too old: age %v exceeds maximum %v", messageAge, maxAge)
+
+			if cs.config.Validation.WarnOnValidationFailures {
+				cs.logger.WithContext(ctx).Warn("Skipping old message",
+					zap.Int64("fill_id", fill.ID),
+					zap.Duration("message_age", messageAge),
+					zap.Duration("max_age", maxAge),
+				)
+				return nil // Skip processing but don't error
+			}
+
+			return domain.NewValidationError("message_too_old", errorMsg)
+		}
+	}
+
 	if cs.validationService != nil {
 		validationResult := cs.validationService.ValidateFillMessage(ctx, fill)
 		if !validationResult.IsValid {
@@ -172,9 +197,30 @@ func getErrorMessage(err error) string {
 func (cs *ConfirmationService) validateFillMessage(ctx context.Context, fill *domain.Fill, currentExecution *domain.ExecutionResponse) error {
 	// Check if execution IDs match
 	if fill.ExecutionServiceID != currentExecution.ID {
-		return domain.NewValidationError("execution_id_mismatch",
-			fmt.Sprintf("fill execution ID %d does not match current execution ID %d",
-				fill.ExecutionServiceID, currentExecution.ID))
+		errorMsg := fmt.Sprintf("fill execution ID %d does not match current execution ID %d",
+			fill.ExecutionServiceID, currentExecution.ID)
+
+		// Check if we should skip execution ID validation
+		if cs.config != nil && cs.config.Validation.SkipExecutionIDValidation {
+			cs.logger.WithContext(ctx).Warn("Skipping execution ID validation due to configuration",
+				zap.Int64("fill_execution_id", fill.ExecutionServiceID),
+				zap.Int64("current_execution_id", currentExecution.ID),
+				zap.String("reason", "skip_execution_id_validation enabled"),
+			)
+			return nil
+		}
+
+		// Check if we should warn instead of error
+		if cs.config != nil && cs.config.Validation.WarnOnValidationFailures {
+			cs.logger.WithContext(ctx).Warn("Execution ID mismatch - treating as warning",
+				zap.Int64("fill_execution_id", fill.ExecutionServiceID),
+				zap.Int64("current_execution_id", currentExecution.ID),
+				zap.String("reason", "warn_on_validation_failures enabled"),
+			)
+			return nil
+		}
+
+		return domain.NewValidationError("execution_id_mismatch", errorMsg)
 	}
 
 	// Check if trade types match

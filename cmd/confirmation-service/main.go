@@ -181,6 +181,7 @@ func main() {
 		TracingProvider:    nil, // Using global OpenTelemetry tracer now
 		ValidationService:  validationService,
 		DuplicateDetection: duplicateDetection,
+		Config:             cfg,
 	})
 
 	// TEMP LOG: Check allocationClient wiring

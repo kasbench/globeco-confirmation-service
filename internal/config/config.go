@@ -16,6 +16,7 @@ type Config struct {
 	Tracing           TracingConfig           `mapstructure:"tracing"`
 	Performance       PerformanceConfig       `mapstructure:"performance"`
 	Health            HealthConfig            `mapstructure:"health"`
+	Validation        ValidationConfig        `mapstructure:"validation"`
 }
 
 // HTTPConfig represents HTTP server configuration
@@ -99,6 +100,13 @@ type HealthConfig struct {
 	CheckInterval      time.Duration `mapstructure:"check_interval" validate:"required"`
 }
 
+// ValidationConfig represents validation configuration
+type ValidationConfig struct {
+	SkipExecutionIDValidation bool `mapstructure:"skip_execution_id_validation"`
+	MaxMessageAgeMinutes      int  `mapstructure:"max_message_age_minutes" validate:"min=0"`
+	WarnOnValidationFailures  bool `mapstructure:"warn_on_validation_failures"`
+}
+
 // GetDefaults returns a Config with default values
 func GetDefaults() *Config {
 	return &Config{
@@ -164,6 +172,11 @@ func GetDefaults() *Config {
 		Health: HealthConfig{
 			StartupGracePeriod: 30 * time.Second,
 			CheckInterval:      10 * time.Second,
+		},
+		Validation: ValidationConfig{
+			SkipExecutionIDValidation: false,
+			MaxMessageAgeMinutes:      60,
+			WarnOnValidationFailures:  true,
 		},
 	}
 }

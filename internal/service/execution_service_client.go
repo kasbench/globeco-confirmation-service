@@ -122,11 +122,26 @@ func (esc *ExecutionServiceClient) GetExecution(ctx context.Context, executionID
 			return esc.handleErrorResponse(resp.StatusCode, body, correlationID)
 		}
 
+		// Log raw response for debugging
+		esc.logger.WithContext(ctx).Debug("Raw execution service response",
+			zap.Int64("requested_execution_id", executionID),
+			zap.String("response_body", string(body)),
+		)
+
 		// Parse response
 		var execResp domain.ExecutionResponse
 		if err := json.Unmarshal(body, &execResp); err != nil {
 			return domain.NewExternalError("execution-service", "failed to parse response", err, false).
 				WithCorrelationID(correlationID)
+		}
+
+		// Check if returned ID matches requested ID
+		if execResp.ID != executionID {
+			esc.logger.WithContext(ctx).Warn("Execution Service returned different ID than requested",
+				zap.Int64("requested_id", executionID),
+				zap.Int64("returned_id", execResp.ID),
+				zap.String("url", url),
+			)
 		}
 
 		response = &execResp
@@ -142,8 +157,10 @@ func (esc *ExecutionServiceClient) GetExecution(ctx context.Context, executionID
 	}
 
 	esc.logger.WithContext(ctx).Info("Successfully retrieved execution",
-		zap.Int64("execution_id", executionID),
+		zap.Int64("requested_execution_id", executionID),
+		zap.Int64("returned_execution_id", response.ID),
 		zap.Int("version", response.Version),
+		zap.Bool("id_mismatch", executionID != response.ID),
 	)
 
 	return response, nil
