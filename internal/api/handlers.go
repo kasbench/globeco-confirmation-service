@@ -213,7 +213,7 @@ func (h *Handlers) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
 		h.logger.WithContext(ctx).Error("Failed to encode readiness response", zap.Error(err))
 	}
 
-	h.logger.WithContext(ctx).Info("Readiness check completed",
+	h.logger.WithContext(ctx).Debug("Readiness check completed",
 		zap.String("overall_status", overallStatus),
 		zap.Bool("kafka_healthy", kafkaHealthy),
 		zap.Bool("execution_service_healthy", executionHealthy),

@@ -118,7 +118,7 @@ func (l *Logger) WithFields(fields ...zap.Field) *Logger {
 
 // LogKafkaMessage logs a Kafka message with standard fields
 func (l *Logger) LogKafkaMessage(ctx context.Context, action string, topic string, partition int, offset int64, processingTime time.Duration) {
-	l.WithContext(ctx).Info("Kafka message processed",
+	l.WithContext(ctx).Debug("Kafka message processed",
 		zap.String("action", action),
 		zap.String("topic", topic),
 		zap.Int("partition", partition),
@@ -141,7 +141,7 @@ func (l *Logger) LogAPICall(ctx context.Context, method string, url string, stat
 		fields = append(fields, zap.Error(err))
 		l.WithContext(ctx).Error("API call failed", fields...)
 	} else {
-		l.WithContext(ctx).Info("API call completed", fields...)
+		l.WithContext(ctx).Debug("API call completed", fields...)
 	}
 }
 

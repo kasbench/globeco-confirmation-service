@@ -20,7 +20,7 @@ func RequestLogger(appLogger *logger.Logger) func(next http.Handler) http.Handle
 			ww := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
 			// Log the incoming request
-			appLogger.WithContext(r.Context()).Info("HTTP request started",
+			appLogger.WithContext(r.Context()).Debug("HTTP request started",
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.String("remote_addr", r.RemoteAddr),
@@ -32,7 +32,7 @@ func RequestLogger(appLogger *logger.Logger) func(next http.Handler) http.Handle
 
 			// Log the completed request
 			duration := time.Since(start)
-			appLogger.WithContext(r.Context()).Info("HTTP request completed",
+			appLogger.WithContext(r.Context()).Debug("HTTP request completed",
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status_code", ww.statusCode),
