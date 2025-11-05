@@ -21,8 +21,8 @@ spec:
     spec:
       containers:
         - name: globeco-confirmation-service
-          image: kasbench/globeco-confirmation-service:latest
-          imagePullPolicy: Always
+          image: kasbench/globeco-confirmation-service:1.0.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8086
           env:
