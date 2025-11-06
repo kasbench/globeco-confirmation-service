@@ -19,6 +19,7 @@ import (
 // KafkaConsumerService handles Kafka message consumption
 type KafkaConsumerService struct {
 	config            config.KafkaConfig
+	performanceConfig config.PerformanceConfig
 	reader            *kafka.Reader
 	logger            *logger.Logger
 	metrics           *metrics.Metrics
@@ -27,6 +28,13 @@ type KafkaConsumerService struct {
 
 	// Message processing
 	messageHandler MessageHandler
+
+	// Parallel processing
+	messageCh    chan kafka.Message
+	commitCh     chan kafka.Message
+	workerCount  int
+	batchSize    int
+	commitTicker *time.Ticker
 
 	// Control channels
 	stopCh chan struct{}
@@ -48,6 +56,7 @@ type MessageHandler interface {
 // KafkaConsumerConfig represents Kafka consumer configuration
 type KafkaConsumerConfig struct {
 	Kafka             config.KafkaConfig
+	Performance       config.PerformanceConfig
 	Logger            *logger.Logger
 	Metrics           *metrics.Metrics
 	ResilienceManager *utils.ResilienceManager
@@ -63,8 +72,8 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		Topic:       config.Kafka.Topic,
 		GroupID:     config.Kafka.ConsumerGroup,
 		MinBytes:    1,
-		MaxBytes:    10e6, // 10MB
-		MaxWait:     1 * time.Second,
+		MaxBytes:    10e6,                   // 10MB
+		MaxWait:     500 * time.Millisecond, // Reduced for better throughput
 		StartOffset: kafka.LastOffset,
 
 		// Error handling
@@ -81,14 +90,25 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		},
 	})
 
+	// Calculate batch size for commits (10% of buffer or min 10)
+	batchSize := config.Performance.MessageBufferSize / 10
+	if batchSize < 10 {
+		batchSize = 10
+	}
+
 	return &KafkaConsumerService{
 		config:            config.Kafka,
+		performanceConfig: config.Performance,
 		reader:            reader,
 		logger:            config.Logger,
 		metrics:           config.Metrics,
 		resilienceManager: config.ResilienceManager,
 		tracingProvider:   config.TracingProvider,
 		messageHandler:    config.MessageHandler,
+		messageCh:         make(chan kafka.Message, config.Performance.MessageBufferSize),
+		commitCh:          make(chan kafka.Message, config.Performance.MessageBufferSize),
+		workerCount:       config.Performance.WorkerPoolSize,
+		batchSize:         batchSize,
 		stopCh:            make(chan struct{}),
 		doneCh:            make(chan struct{}),
 	}
@@ -100,7 +120,7 @@ func (kcs *KafkaConsumerService) Start(ctx context.Context) error {
 	defer kcs.mutex.Unlock()
 
 	if kcs.isRunning {
-		return fmt.Errorf("Kafka consumer is already running")
+		return fmt.Errorf("kafka consumer is already running")
 	}
 
 	correlationID := logger.GenerateCorrelationID()
@@ -118,10 +138,29 @@ func (kcs *KafkaConsumerService) Start(ctx context.Context) error {
 	}
 
 	kcs.isRunning = true
-	kcs.wg.Add(1)
-	go kcs.consumeLoop(ctx)
 
-	kcs.logger.WithContext(ctx).Info("Kafka consumer started successfully")
+	// Start commit ticker for batch commits
+	kcs.commitTicker = time.NewTicker(2 * time.Second)
+
+	// Start message fetcher
+	kcs.wg.Add(1)
+	go kcs.fetchLoop(ctx)
+
+	// Start worker goroutines
+	for i := 0; i < kcs.workerCount; i++ {
+		kcs.wg.Add(1)
+		go kcs.workerLoop(ctx, i)
+	}
+
+	// Start commit handler
+	kcs.wg.Add(1)
+	go kcs.commitLoop(ctx)
+
+	kcs.logger.WithContext(ctx).Info("Kafka consumer started successfully",
+		zap.Int("worker_count", kcs.workerCount),
+		zap.Int("buffer_size", kcs.performanceConfig.MessageBufferSize),
+		zap.Int("batch_size", kcs.batchSize),
+	)
 	return nil
 }
 
@@ -139,8 +178,17 @@ func (kcs *KafkaConsumerService) Stop(ctx context.Context) error {
 	// Signal stop
 	close(kcs.stopCh)
 
-	// Wait for consumer loop to finish
+	// Stop commit ticker
+	if kcs.commitTicker != nil {
+		kcs.commitTicker.Stop()
+	}
+
+	// Wait for all goroutines to finish
 	kcs.wg.Wait()
+
+	// Close channels
+	close(kcs.messageCh)
+	close(kcs.commitCh)
 
 	// Close reader
 	if err := kcs.reader.Close(); err != nil {
@@ -190,6 +238,19 @@ func (kcs *KafkaConsumerService) GetStats() map[string]interface{} {
 		"brokers":        kcs.config.Brokers,
 		"topic":          kcs.config.Topic,
 		"consumer_group": kcs.config.ConsumerGroup,
+		"worker_count":   kcs.workerCount,
+		"batch_size":     kcs.batchSize,
+	}
+
+	// Add channel stats
+	if kcs.messageCh != nil {
+		stats["message_queue_length"] = len(kcs.messageCh)
+		stats["message_queue_capacity"] = cap(kcs.messageCh)
+	}
+
+	if kcs.commitCh != nil {
+		stats["commit_queue_length"] = len(kcs.commitCh)
+		stats["commit_queue_capacity"] = cap(kcs.commitCh)
 	}
 
 	// Add reader stats if available
@@ -207,63 +268,181 @@ func (kcs *KafkaConsumerService) GetStats() map[string]interface{} {
 	return stats
 }
 
-// consumeLoop is the main message consumption loop
-func (kcs *KafkaConsumerService) consumeLoop(ctx context.Context) {
+// fetchLoop fetches messages from Kafka and sends them to workers
+func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
 	defer kcs.wg.Done()
 
 	correlationID := logger.GenerateCorrelationID()
 	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
 
-	kcs.logger.WithContext(ctx).Info("Starting Kafka message consumption loop")
+	kcs.logger.WithContext(ctx).Info("Starting Kafka message fetch loop")
 
 	for {
 		select {
 		case <-kcs.stopCh:
-			kcs.logger.WithContext(ctx).Info("Kafka consumer loop stopping")
+			kcs.logger.WithContext(ctx).Info("Kafka fetch loop stopping")
 			return
 		case <-ctx.Done():
-			kcs.logger.WithContext(ctx).Info("Kafka consumer loop cancelled")
+			kcs.logger.WithContext(ctx).Info("Kafka fetch loop cancelled")
 			return
 		default:
-			if err := kcs.processMessage(ctx); err != nil {
-				kcs.logger.WithContext(ctx).Error("Error processing message", zap.Error(err))
-				// Continue processing other messages
+			// Fetch message with timeout
+			fetchCtx, cancel := context.WithTimeout(ctx, kcs.config.FetchTimeout)
+			message, err := kcs.reader.FetchMessage(fetchCtx)
+			cancel()
+
+			if err != nil {
+				if err == context.DeadlineExceeded {
+					// Timeout is expected, continue
+					continue
+				}
+				kcs.logger.WithContext(ctx).Error("Error fetching message", zap.Error(err))
+				// Brief pause before retrying
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			// Send message to workers (non-blocking)
+			select {
+			case kcs.messageCh <- message:
+				// Message sent successfully
+			case <-kcs.stopCh:
+				return
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
 }
 
-// processMessage processes a single Kafka message
-func (kcs *KafkaConsumerService) processMessage(ctx context.Context) error {
-	// Set timeout for message fetch
-	fetchCtx, cancel := context.WithTimeout(ctx, kcs.config.FetchTimeout)
-	defer cancel()
+// workerLoop processes messages from the message channel
+func (kcs *KafkaConsumerService) workerLoop(ctx context.Context, workerID int) {
+	defer kcs.wg.Done()
 
-	// Read message with resilience
-	return kcs.resilienceManager.ExecuteKafkaOperation(
-		fetchCtx,
-		"consume_message",
-		kcs.config.Topic,
-		-1, // Partition unknown at this point
-		-1, // Offset unknown at this point
-		func(ctx context.Context) error {
-			message, err := kcs.reader.FetchMessage(ctx)
-			if err != nil {
-				if err == context.DeadlineExceeded {
-					// Timeout is expected, not an error
-					return nil
-				}
-				return fmt.Errorf("failed to fetch message: %w", err)
+	correlationID := logger.GenerateCorrelationID()
+	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
+
+	kcs.logger.WithContext(ctx).Info("Starting Kafka worker",
+		zap.Int("worker_id", workerID),
+	)
+
+	for {
+		select {
+		case <-kcs.stopCh:
+			kcs.logger.WithContext(ctx).Info("Kafka worker stopping",
+				zap.Int("worker_id", workerID),
+			)
+			return
+		case <-ctx.Done():
+			kcs.logger.WithContext(ctx).Info("Kafka worker cancelled",
+				zap.Int("worker_id", workerID),
+			)
+			return
+		case message, ok := <-kcs.messageCh:
+			if !ok {
+				return // Channel closed
 			}
 
-			// Process the message
-			return kcs.handleMessage(ctx, message)
-		},
+			if err := kcs.handleMessage(ctx, message, workerID); err != nil {
+				kcs.logger.WithContext(ctx).Error("Error processing message",
+					zap.Int("worker_id", workerID),
+					zap.Error(err),
+				)
+				// Don't commit failed messages
+				continue
+			}
+
+			// Send message for commit (non-blocking)
+			select {
+			case kcs.commitCh <- message:
+				// Message queued for commit
+			case <-kcs.stopCh:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				// Commit channel full, log warning but continue
+				kcs.logger.WithContext(ctx).Warn("Commit channel full, message may be reprocessed")
+			}
+		}
+	}
+}
+
+// commitLoop handles batch commits of processed messages
+func (kcs *KafkaConsumerService) commitLoop(ctx context.Context) {
+	defer kcs.wg.Done()
+
+	correlationID := logger.GenerateCorrelationID()
+	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
+
+	kcs.logger.WithContext(ctx).Info("Starting Kafka commit loop",
+		zap.Int("batch_size", kcs.batchSize),
+	)
+
+	var messagesToCommit []kafka.Message
+
+	for {
+		select {
+		case <-kcs.stopCh:
+			// Commit any remaining messages before stopping
+			if len(messagesToCommit) > 0 {
+				kcs.commitBatch(ctx, messagesToCommit)
+			}
+			kcs.logger.WithContext(ctx).Info("Kafka commit loop stopping")
+			return
+		case <-ctx.Done():
+			kcs.logger.WithContext(ctx).Info("Kafka commit loop cancelled")
+			return
+		case <-kcs.commitTicker.C:
+			// Periodic commit
+			if len(messagesToCommit) > 0 {
+				kcs.commitBatch(ctx, messagesToCommit)
+				messagesToCommit = messagesToCommit[:0] // Reset slice
+			}
+		case message, ok := <-kcs.commitCh:
+			if !ok {
+				return // Channel closed
+			}
+
+			messagesToCommit = append(messagesToCommit, message)
+
+			// Commit when batch is full
+			if len(messagesToCommit) >= kcs.batchSize {
+				kcs.commitBatch(ctx, messagesToCommit)
+				messagesToCommit = messagesToCommit[:0] // Reset slice
+			}
+		}
+	}
+}
+
+// commitBatch commits a batch of messages
+func (kcs *KafkaConsumerService) commitBatch(ctx context.Context, messages []kafka.Message) {
+	if len(messages) == 0 {
+		return
+	}
+
+	startTime := time.Now()
+
+	if err := kcs.reader.CommitMessages(ctx, messages...); err != nil {
+		kcs.logger.WithContext(ctx).Error("Failed to commit message batch",
+			zap.Int("batch_size", len(messages)),
+			zap.Error(err),
+		)
+		return
+	}
+
+	commitTime := time.Since(startTime)
+	kcs.logger.WithContext(ctx).Debug("Committed message batch",
+		zap.Int("batch_size", len(messages)),
+		zap.Duration("commit_time", commitTime),
 	)
 }
 
+// processMessage is deprecated - replaced by parallel processing
+// Keeping for backward compatibility but not used in new implementation
+
 // handleMessage handles a single Kafka message
-func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafka.Message) error {
+func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafka.Message, workerID int) error {
 	startTime := time.Now()
 
 	// Generate correlation ID for this message
@@ -291,6 +470,7 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 		zap.Int("partition", message.Partition),
 		zap.Int64("offset", message.Offset),
 		zap.Int("message_size", len(message.Value)),
+		zap.Int("worker_id", workerID),
 	)
 
 	// Parse the fill message
@@ -318,6 +498,7 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 			"partition": message.Partition,
 			"offset":    message.Offset,
 			"fill_id":   fill.ID,
+			"worker_id": workerID,
 		},
 	)
 
@@ -325,21 +506,12 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 		kcs.metrics.RecordMessageFailed()
 		kcs.logger.WithContext(ctx).Error("Failed to handle fill message",
 			zap.Int64("fill_id", fill.ID),
+			zap.Int("worker_id", workerID),
 			zap.Error(err),
 		)
 
 		// Don't commit the message if processing failed
 		return err
-	}
-
-	// Commit the message
-	if err := kcs.reader.CommitMessages(ctx, message); err != nil {
-		kcs.logger.WithContext(ctx).Error("Failed to commit message",
-			zap.Int("partition", message.Partition),
-			zap.Int64("offset", message.Offset),
-			zap.Error(err),
-		)
-		return fmt.Errorf("failed to commit message: %w", err)
 	}
 
 	// Update metrics and state
@@ -357,6 +529,7 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 		zap.Int64("execution_service_id", fill.ExecutionServiceID),
 		zap.Duration("processing_time", processingTime),
 		zap.Int64("total_messages", kcs.messageCount),
+		zap.Int("worker_id", workerID),
 	)
 
 	return nil

@@ -196,6 +196,7 @@ func main() {
 	// Initialize Kafka consumer
 	kafkaConsumer := service.NewKafkaConsumerService(service.KafkaConsumerConfig{
 		Kafka:             cfg.Kafka,
+		Performance:       cfg.Performance,
 		Logger:            appLogger,
 		Metrics:           appMetrics,
 		ResilienceManager: resilienceManager,
