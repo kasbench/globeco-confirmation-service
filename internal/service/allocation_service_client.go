@@ -72,7 +72,7 @@ func (asc *AllocationServiceClient) PostExecution(ctx context.Context, dto *doma
 	url := fmt.Sprintf("%s/api/v1/executions", asc.config.BaseURL)
 	correlationID := logger.GetCorrelationID(ctx)
 
-	asc.logger.WithContext(ctx).Info("Posting execution to Allocation Service",
+	asc.logger.WithContext(ctx).Debug("Posting execution to Allocation Service",
 		zap.String("url", url),
 		zap.Int64("execution_service_id", dto.ExecutionServiceID),
 	)
@@ -128,7 +128,7 @@ func (asc *AllocationServiceClient) PostExecution(ctx context.Context, dto *doma
 			return domain.NewExternalError("allocation-service", fmt.Sprintf("unexpected status code: %d", resp.StatusCode), nil, true).WithCorrelationID(correlationID)
 		}
 
-		asc.logger.WithContext(ctx).Info("Successfully posted execution to Allocation Service",
+		asc.logger.WithContext(ctx).Debug("Successfully posted execution to Allocation Service",
 			zap.Int64("execution_service_id", dto.ExecutionServiceID),
 			zap.Int("status_code", resp.StatusCode),
 		)

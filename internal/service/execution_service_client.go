@@ -156,7 +156,7 @@ func (esc *ExecutionServiceClient) GetExecution(ctx context.Context, executionID
 		return nil, err
 	}
 
-	esc.logger.WithContext(ctx).Info("Successfully retrieved execution",
+	esc.logger.WithContext(ctx).Debug("Successfully retrieved execution",
 		zap.Int64("requested_execution_id", executionID),
 		zap.Int64("returned_execution_id", response.ID),
 		zap.Int("version", response.Version),
@@ -251,7 +251,7 @@ func (esc *ExecutionServiceClient) UpdateExecution(ctx context.Context, executio
 		return nil, err
 	}
 
-	esc.logger.WithContext(ctx).Info("Successfully updated execution",
+	esc.logger.WithContext(ctx).Debug("Successfully updated execution",
 		zap.Int64("execution_id", executionID),
 		zap.Int64("quantity_filled", updateReq.QuantityFilled),
 		zap.Float64("average_price", updateReq.AveragePrice),

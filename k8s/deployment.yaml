@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: globeco-confirmation-service
-          image: kasbench/globeco-confirmation-service:1.0.1
+          image: kasbench/globeco-confirmation-service:1.0.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8086
@@ -33,7 +33,7 @@ spec:
             - name: OTEL_SERVICE_NAMESPACE
               value: "globeco"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "otel-collector-collector.monitoring.svc.cluster.local:4317"
+              value: "otel-collector-daemonset-collector.monitoring.svc.cluster.local:4317"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: "grpc"
             - name: OTEL_RESOURCE_ATTRIBUTES

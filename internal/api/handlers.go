@@ -111,6 +111,7 @@ func (h *Handlers) LivenessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode liveness response", zap.Error(err))
@@ -206,9 +207,7 @@ func (h *Handlers) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if statusCode != http.StatusOK {
-		w.WriteHeader(statusCode)
-	}
+	w.WriteHeader(statusCode)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode readiness response", zap.Error(err))
@@ -263,6 +262,7 @@ func (h *Handlers) StatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode stats response", zap.Error(err))
@@ -289,6 +289,7 @@ func (h *Handlers) VersionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode version response", zap.Error(err))
@@ -318,6 +319,7 @@ func (h *Handlers) RootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode root response", zap.Error(err))

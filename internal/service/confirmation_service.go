@@ -71,7 +71,7 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 	startTime := time.Now()
 	var processingError error
 
-	cs.logger.WithContext(ctx).Info("Processing fill message", zap.Int64("fill_id", fill.ID))
+	cs.logger.WithContext(ctx).Debug("Processing fill message", zap.Int64("fill_id", fill.ID))
 
 	// Start tracing span
 	var span interface{}
@@ -177,7 +177,7 @@ func (cs *ConfirmationService) checkForDuplicates(ctx context.Context, fill *dom
 }
 
 func (cs *ConfirmationService) logSuccess(ctx context.Context, fill *domain.Fill, updateResponse *domain.ExecutionUpdateResponse, duration time.Duration) {
-	cs.logger.WithContext(ctx).Info("Successfully processed fill message",
+	cs.logger.WithContext(ctx).Debug("Successfully processed fill message",
 		zap.Int64("fill_id", fill.ID),
 		zap.Int64("execution_service_id", fill.ExecutionServiceID),
 		zap.Int("new_version", updateResponse.Version),
@@ -333,7 +333,7 @@ func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, f
 // handleAllocationServiceCall handles the interaction with the Allocation Service
 func (cs *ConfirmationService) handleAllocationServiceCall(ctx context.Context, fill *domain.Fill) {
 	// TEMPORARY: Log the fill object before checking isOpen
-	cs.logger.WithContext(ctx).Info("AllocationServiceCall: fill object", zap.Any("fill", fill))
+	cs.logger.WithContext(ctx).Debug("AllocationServiceCall: fill object", zap.Any("fill", fill))
 	if !fill.IsOpen && cs.allocationClient != nil {
 		allocationDTO := domain.NewAllocationServiceExecutionDTO(fill)
 		err := cs.allocationClient.PostExecution(ctx, allocationDTO)

@@ -524,7 +524,7 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 	kcs.lastMessage = time.Now()
 	kcs.mutex.Unlock()
 
-	kcs.logger.WithContext(ctx).Info("Successfully processed fill message",
+	kcs.logger.WithContext(ctx).Debug("Successfully processed fill message",
 		zap.Int64("fill_id", fill.ID),
 		zap.Int64("execution_service_id", fill.ExecutionServiceID),
 		zap.Duration("processing_time", processingTime),
