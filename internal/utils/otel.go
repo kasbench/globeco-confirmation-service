@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -72,9 +73,16 @@ func SetupOTel(ctx context.Context, config OTelConfig) (func(context.Context) er
 		return nil, fmt.Errorf("failed to create metric exporter: %w", err)
 	}
 
-	// Create meter provider
+	// Create Prometheus exporter (auto-registers with prometheus.DefaultRegisterer)
+	promExporter, err := prometheus.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create prometheus exporter: %w", err)
+	}
+
+	// Create meter provider with dual readers: OTLP periodic + Prometheus exporter
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(metric.NewPeriodicReader(metricExp)),
+		metric.WithReader(promExporter),
 		metric.WithResource(res),
 	)
 	otel.SetMeterProvider(meterProvider)

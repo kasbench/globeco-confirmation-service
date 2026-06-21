@@ -1,0 +1,445 @@
+{
+  "pbtResults": {
+    "4.2 Write property test for Property 8: Latency clamping rules": {
+      "status": "passed",
+      "lastRunTimestamp": 1782078013653
+    },
+    "4.4 Write property test for Property 3: Time accounting conservation": {
+      "status": "passed",
+      "lastRunTimestamp": 1782078039581
+    },
+    "4.3 Write property test for Property 2: Success and failure mutual exclusivity": {
+      "status": "passed",
+      "lastRunTimestamp": 1782078057892
+    },
+    "4.1 Write property test for Property 7: Message creation time priority resolution": {
+      "status": "passed",
+      "lastRunTimestamp": 1782079111558
+    },
+    "4.7 Write property test for Property 1: Common labels always present": {
+      "status": "passed",
+      "lastRunTimestamp": 1782079121820
+    },
+    "4.5 Write property test for Property 4: Poll counter increments iff FetchMessage succeeds": {
+      "status": "passed",
+      "lastRunTimestamp": 1782079211446
+    },
+    "4.6 Write property test for Property 5: Poll seconds accumulates for non-cancelled calls": {
+      "status": "passed",
+      "lastRunTimestamp": 1782079226658
+    },
+    "4.8 Write property test for Property 9: Context cancellation produces zero observations": {
+      "status": "passed",
+      "lastRunTimestamp": 1782079234488
+    }
+  },
+  "executionHistory": {
+    "1.1 Add new Go dependencies": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075592974
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075604640
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075733612
+      }
+    ],
+    "1.2 Create `internal/metrics/consumer_metrics.go` with ConsumerMetrics struct and constructor": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593065
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075739784
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076377580
+      }
+    ],
+    "1.3 Implement recording methods on ConsumerMetrics": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593094
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076381647
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076743607
+      }
+    ],
+    "1.4 Create `internal/metrics/creation_time.go` with message creation time resolution": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593115
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075740617
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076378398
+      }
+    ],
+    "2.1 Modify `internal/utils/otel.go` to add Prometheus exporter reader": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593141
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076382479
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076744461
+      }
+    ],
+    "2.2 Add `ConsumerMetrics` field to `KafkaConsumerService` and update constructor": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593175
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076748099
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077001907
+      }
+    ],
+    "2.3 Instrument `fetchLoop` with poll/idle metric recording": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593212
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077006278
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077738694
+      }
+    ],
+    "2.4 Instrument `handleMessage` with processing metric recording": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593234
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077006995
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077739546
+      }
+    ],
+    "2.5 Wire `ConsumerMetrics` into `cmd/confirmation-service/main.go`": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593262
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076748932
+      },
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077002680
+      }
+    ],
+    "3. Checkpoint - Ensure build compiles and basic tests pass": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593285
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077752469
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077806129
+      }
+    ],
+    "6. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782075593314
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077828060
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079409673
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079485754
+      }
+    ],
+    "1. Add dependencies and create metrics package structure": [
+      {
+        "executionId": "32c02901-4ad7-4e7f-a08b-5295ff073f1d",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782076743637
+      }
+    ],
+    "2. Modify OTel initialization and instrument Kafka consumer": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077739584
+      }
+    ],
+    "4.1 Write property test for Property 7: Message creation time priority resolution": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077815294
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077836087
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079140079
+      }
+    ],
+    "4.2 Write property test for Property 8: Latency clamping rules": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077816174
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077836933
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079140860
+      }
+    ],
+    "4.3 Write property test for Property 2: Success and failure mutual exclusivity": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077816948
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077838575
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079141672
+      }
+    ],
+    "4.4 Write property test for Property 3: Time accounting conservation": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077817694
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077839363
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079142520
+      }
+    ],
+    "4.5 Write property test for Property 4: Poll counter increments iff FetchMessage succeeds": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077818582
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079147504
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079293247
+      }
+    ],
+    "4.6 Write property test for Property 5: Poll seconds accumulates for non-cancelled calls": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077821505
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079148591
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079291625
+      }
+    ],
+    "4.7 Write property test for Property 1: Common labels always present": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077822282
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077837792
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079143323
+      }
+    ],
+    "4.8 Write property test for Property 9: Context cancellation produces zero observations": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077823060
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079149581
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079289885
+      }
+    ],
+    "5.1 Write unit tests for ConsumerMetrics initialization": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077823859
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079150472
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079292365
+      }
+    ],
+    "5.2 Write unit tests for specific failure scenarios": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077824640
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079151352
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079290705
+      }
+    ],
+    "5.3 Write integration test for `/metrics` endpoint exposure": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782077827272
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079311021
+      },
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079406095
+      }
+    ],
+    "4. Property-based tests for correctness properties": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079140109
+      }
+    ],
+    "5. Unit tests and integration tests": [
+      {
+        "executionId": "95f7f1ba-1fe0-41df-aa67-2b94c9424c96",
+        "chatSessionId": "sess_9de147e4-305a-47ba-93ab-1f2cbb09ffa5",
+        "timestamp": 1782079290745
+      }
+    ]
+  }
+}

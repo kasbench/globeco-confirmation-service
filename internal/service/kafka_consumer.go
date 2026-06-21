@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/kasbench/globeco-confirmation-service/internal/config"
 	"github.com/kasbench/globeco-confirmation-service/internal/domain"
+	consumermetrics "github.com/kasbench/globeco-confirmation-service/internal/metrics"
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
@@ -23,6 +25,7 @@ type KafkaConsumerService struct {
 	reader            *kafka.Reader
 	logger            *logger.Logger
 	metrics           *metrics.Metrics
+	consumerMetrics   *consumermetrics.ConsumerMetrics
 	resilienceManager *utils.ResilienceManager
 	tracingProvider   *utils.TracingProvider
 
@@ -59,6 +62,7 @@ type KafkaConsumerConfig struct {
 	Performance       config.PerformanceConfig
 	Logger            *logger.Logger
 	Metrics           *metrics.Metrics
+	ConsumerMetrics   *consumermetrics.ConsumerMetrics
 	ResilienceManager *utils.ResilienceManager
 	TracingProvider   *utils.TracingProvider
 	MessageHandler    MessageHandler
@@ -102,6 +106,7 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		reader:            reader,
 		logger:            config.Logger,
 		metrics:           config.Metrics,
+		consumerMetrics:   config.ConsumerMetrics,
 		resilienceManager: config.ResilienceManager,
 		tracingProvider:   config.TracingProvider,
 		messageHandler:    config.MessageHandler,
@@ -288,19 +293,26 @@ func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
 		default:
 			// Fetch message with timeout
 			fetchCtx, cancel := context.WithTimeout(ctx, kcs.config.FetchTimeout)
+			pollStart := time.Now()
 			message, err := kcs.reader.FetchMessage(fetchCtx)
 			cancel()
+			pollDuration := time.Since(pollStart).Seconds()
 
 			if err != nil {
-				if err == context.DeadlineExceeded {
-					// Timeout is expected, continue
+				// Context cancellation or deadline exceeded: no metrics recorded
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					continue
 				}
+				// Other errors: record poll error metrics, then log and continue
+				kcs.consumerMetrics.RecordPollError(ctx, pollDuration)
 				kcs.logger.WithContext(ctx).Error("Error fetching message", zap.Error(err))
 				// Brief pause before retrying
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+
+			// Success: record poll success metrics
+			kcs.consumerMetrics.RecordPollSuccess(ctx, pollDuration, message.Topic, message.Partition)
 
 			// Send message to workers (non-blocking)
 			select {
@@ -441,9 +453,25 @@ func (kcs *KafkaConsumerService) commitBatch(ctx context.Context, messages []kaf
 // processMessage is deprecated - replaced by parallel processing
 // Keeping for backward compatibility but not used in new implementation
 
+// computeLatencyPtr resolves the message creation time and calculates latency.
+// Returns nil if no valid creation time is found or latency should be skipped.
+func computeLatencyPtr(message kafka.Message, rawValue []byte, completionTime time.Time) *float64 {
+	creationTime, ok := consumermetrics.ResolveMessageCreationTime(message, rawValue)
+	if !ok {
+		return nil
+	}
+	latency, ok := consumermetrics.CalculateLatency(creationTime, completionTime)
+	if !ok {
+		return nil
+	}
+	return &latency
+}
+
 // handleMessage handles a single Kafka message
 func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafka.Message, workerID int) error {
 	startTime := time.Now()
+	processingStart := time.Now()
+	rawValue := message.Value
 
 	// Generate correlation ID for this message
 	correlationID := logger.GenerateCorrelationID()
@@ -477,12 +505,32 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 	var fill domain.Fill
 	if err := json.Unmarshal(message.Value, &fill); err != nil {
 		kcs.metrics.RecordMessageFailed()
+
+		// Record consumer metrics for unmarshal failure
+		processingDuration := time.Since(processingStart).Seconds()
+		if processingDuration < 0 {
+			processingDuration = 0
+		}
+		completionTime := time.Now()
+		latencyPtr := computeLatencyPtr(message, rawValue, completionTime)
+		kcs.consumerMetrics.RecordProcessingFailure(ctx, processingDuration, latencyPtr, message.Topic, message.Partition)
+
 		return fmt.Errorf("failed to unmarshal fill message: %w", err)
 	}
 
 	// Validate the fill message
 	if err := fill.Validate(); err != nil {
 		kcs.metrics.RecordMessageFailed()
+
+		// Record consumer metrics for validation failure
+		processingDuration := time.Since(processingStart).Seconds()
+		if processingDuration < 0 {
+			processingDuration = 0
+		}
+		completionTime := time.Now()
+		latencyPtr := computeLatencyPtr(message, rawValue, completionTime)
+		kcs.consumerMetrics.RecordProcessingFailure(ctx, processingDuration, latencyPtr, message.Topic, message.Partition)
+
 		return fmt.Errorf("invalid fill message: %w", err)
 	}
 
@@ -504,6 +552,16 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 
 	if err != nil {
 		kcs.metrics.RecordMessageFailed()
+
+		// Record consumer metrics for resilience-wrapped handler failure
+		processingDuration := time.Since(processingStart).Seconds()
+		if processingDuration < 0 {
+			processingDuration = 0
+		}
+		completionTime := time.Now()
+		latencyPtr := computeLatencyPtr(message, rawValue, completionTime)
+		kcs.consumerMetrics.RecordProcessingFailure(ctx, processingDuration, latencyPtr, message.Topic, message.Partition)
+
 		kcs.logger.WithContext(ctx).Error("Failed to handle fill message",
 			zap.Int64("fill_id", fill.ID),
 			zap.Int("worker_id", workerID),
@@ -518,6 +576,15 @@ func (kcs *KafkaConsumerService) handleMessage(ctx context.Context, message kafk
 	processingTime := time.Since(startTime)
 	kcs.metrics.RecordMessageProcessed()
 	kcs.metrics.RecordMessageProcessingTime(processingTime)
+
+	// Record consumer metrics for successful processing
+	processingDuration := time.Since(processingStart).Seconds()
+	if processingDuration < 0 {
+		processingDuration = 0
+	}
+	completionTime := time.Now()
+	latencyPtr := computeLatencyPtr(message, rawValue, completionTime)
+	kcs.consumerMetrics.RecordProcessingSuccess(ctx, processingDuration, latencyPtr, message.Topic, message.Partition)
 
 	kcs.mutex.Lock()
 	kcs.messageCount++

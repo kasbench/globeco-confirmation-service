@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -32,12 +34,12 @@ func main() {
 	tracer := otel.Tracer("test-service")
 	ctx, span := tracer.Start(context.Background(), "test-operation")
 	span.SetAttributes(attribute.String("test.key", "test.value"))
-	
+
 	fmt.Println("Created test span")
-	
+
 	// Simulate some work
 	time.Sleep(100 * time.Millisecond)
-	
+
 	span.End()
 	fmt.Println("Ended test span")
 

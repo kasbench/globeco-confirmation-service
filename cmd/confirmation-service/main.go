@@ -11,11 +11,13 @@ import (
 
 	"github.com/kasbench/globeco-confirmation-service/internal/api"
 	"github.com/kasbench/globeco-confirmation-service/internal/config"
+	consumermetrics "github.com/kasbench/globeco-confirmation-service/internal/metrics"
 	"github.com/kasbench/globeco-confirmation-service/internal/service"
 	"github.com/kasbench/globeco-confirmation-service/internal/utils"
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
 	"github.com/kasbench/globeco-confirmation-service/pkg/metrics"
 	"github.com/kasbench/globeco-confirmation-service/pkg/otelmetrics"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 )
 
@@ -59,6 +61,13 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+	}
+
+	// Initialize Kafka consumer metrics using OTel meter
+	meter := otel.GetMeterProvider().Meter("globeco-confirmation-service")
+	consumerMetrics, err := consumermetrics.NewConsumerMetrics(meter, cfg.Kafka.ConsumerGroup)
+	if err != nil {
+		log.Fatalf("Failed to initialize consumer metrics: %v", err)
 	}
 
 	// Note: Tracing is now handled by the OpenTelemetry setup above
@@ -199,6 +208,7 @@ func main() {
 		Performance:       cfg.Performance,
 		Logger:            appLogger,
 		Metrics:           appMetrics,
+		ConsumerMetrics:   consumerMetrics,
 		ResilienceManager: resilienceManager,
 		TracingProvider:   nil, // Using global OpenTelemetry tracer now
 		MessageHandler:    confirmationService,
