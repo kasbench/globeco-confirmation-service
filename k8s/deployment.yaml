@@ -15,7 +15,7 @@ spec:
       labels:
         app: globeco-confirmation-service
       annotations:
-        prometheus.io/scrape: "true"
+        prometheus.io/scrape: "false"
         prometheus.io/port: "8086"
         prometheus.io/path: "/metrics"
     spec:
