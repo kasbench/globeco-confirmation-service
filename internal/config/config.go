@@ -73,9 +73,10 @@ type LoggingConfig struct {
 
 // MetricsConfig represents metrics configuration
 type MetricsConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`
-	Path      string `mapstructure:"path" validate:"required"`
-	Namespace string `mapstructure:"namespace" validate:"required"`
+	Enabled        bool          `mapstructure:"enabled"`
+	Path           string        `mapstructure:"path" validate:"required"`
+	Namespace      string        `mapstructure:"namespace" validate:"required"`
+	ExportInterval time.Duration `mapstructure:"export_interval"`
 }
 
 // TracingConfig represents tracing configuration
@@ -153,9 +154,10 @@ func GetDefaults() *Config {
 			Output: "stdout",
 		},
 		Metrics: MetricsConfig{
-			Enabled:   true,
-			Path:      "/metrics",
-			Namespace: "confirmation",
+			Enabled:        true,
+			Path:           "/metrics",
+			Namespace:      "confirmation",
+			ExportInterval: 15 * time.Second,
 		},
 		Tracing: TracingConfig{
 			Enabled:        true,

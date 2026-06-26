@@ -1,6 +1,6 @@
 docker buildx build --platform linux/amd64,linux/arm64 \
 --tag kasbench/globeco-confirmation-service:latest \
---tag kasbench/globeco-confirmation-service:1.0.4 \
+--tag kasbench/globeco-confirmation-service:1.0.5 \
 --file Dockerfile \
 --push .
 kubectl delete -f k8s/deployment.yaml

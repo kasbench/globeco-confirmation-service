@@ -58,6 +58,7 @@ func main() {
 		ServiceNamespace: "globeco",
 		OTLPEndpoint:     cfg.Tracing.OTLPEndpoint,
 		Enabled:          cfg.Tracing.Enabled,
+		ExportInterval:   cfg.Metrics.ExportInterval,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)

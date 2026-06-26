@@ -1,32 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: globeco-confirmation-service
+  name: globeco-fix-engine
   namespace: globeco
   labels:
-    app: globeco-confirmation-service
+    app: globeco-fix-engine
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: globeco-confirmation-service
+      app: globeco-fix-engine
   template:
     metadata:
       labels:
-        app: globeco-confirmation-service
-      annotations:
-        prometheus.io/scrape: "false"
-        prometheus.io/port: "8086"
-        prometheus.io/path: "/metrics"
+        app: globeco-fix-engine
     spec:
       containers:
-        - name: globeco-confirmation-service
-          image: kasbench/globeco-confirmation-service:1.0.5
+        - name: globeco-fix-engine
+          image: kasbench/globeco-fix-engine:1.0.7
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8086
+            - containerPort: 8085
           env:
-            # Inject pod/node metadata from the Downward API
+            # Inject the node and pod metadata from the Downward API
             - name: MY_POD_IP
               valueFrom:
                 fieldRef:
@@ -43,57 +39,61 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Inject the node IP from the Downward API
             - name: NODE_IP
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
 
+            # Point OTEL exporter to the local collector on the same node
+            
+            - name: OTEL_METRICENDPOINT
+              value: "$(NODE_IP):4317"
+
+            - name: OTEL_TRACEENDPOINT
+              value: "$(NODE_IP):4317"
+
+            # Define standard service identity attributes
             - name: OTEL_SERVICE_NAME
-              value: "globeco-confirmation-service"
-            - name: OTEL_SERVICE_VERSION
-              value: "1.0.0"
+              value: "globeco-fix-engine"  # Fixed to match actual service name
             - name: OTEL_SERVICE_NAMESPACE
               value: "globeco"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "$(NODE_IP):4317"
-            - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: "grpc"
+            
+            # Log level configuration
+            - name: LOG_LEVEL
+              value: "info"
+            
+            # Inject Kubernetes metadata as resource attributes for k8sattributes processor
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: >-
-                service.name=globeco-confirmation-service,
-                service.version=1.0.0,
-                service.namespace=globeco,
                 k8s.pod.ip=$(MY_POD_IP),
                 k8s.pod.name=$(MY_POD_NAME),
                 k8s.node.name=$(MY_NODE_NAME),
                 k8s.namespace.name=$(MY_NAMESPACE)
-            - name: TRACING_ENABLED
-              value: "true"
-            - name: METRICS_ENABLED
-              value: "true"
+
           resources:
             requests:
-              cpu: 100m
-              memory: 200Mi
+              cpu: 500m
+              memory: 500Mi
             limits:
-              cpu: 1000m
-              memory: 1000Mi
+              cpu: 2000m
+              memory: 2000Mi
           livenessProbe:
             httpGet:
-              path: /health/live
-              port: 8086
-            initialDelaySeconds: 30
+              path: /healthz
+              port: 8085
+            initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 240
-            failureThreshold: 6
+            failureThreshold: 10
           readinessProbe:
             httpGet:
-              path: /health/ready
-              port: 8086
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 240
-            failureThreshold: 6
+              path: /healthz
+              port: 8085
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
           # startupProbe:
           #   httpGet:
           #     path: /healthz

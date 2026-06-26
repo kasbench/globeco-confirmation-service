@@ -52,6 +52,7 @@ metrics:
   enabled: true
   path: "/metrics"
   namespace: "confirmation"
+  export_interval: "15s"
 
 # Tracing Configuration
 tracing:

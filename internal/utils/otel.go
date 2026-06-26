@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -22,6 +23,7 @@ type OTelConfig struct {
 	ServiceNamespace string
 	OTLPEndpoint     string
 	Enabled          bool
+	ExportInterval   time.Duration
 }
 
 // SetupOTel configures OpenTelemetry following GlobeCo standards
@@ -80,8 +82,14 @@ func SetupOTel(ctx context.Context, config OTelConfig) (func(context.Context) er
 	}
 
 	// Create meter provider with dual readers: OTLP periodic + Prometheus exporter
+	readerOpts := []metric.PeriodicReaderOption{}
+	if config.ExportInterval > 0 {
+		readerOpts = append(readerOpts, metric.WithInterval(config.ExportInterval))
+	} else {
+		readerOpts = append(readerOpts, metric.WithInterval(15*time.Second))
+	}
 	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExp)),
+		metric.WithReader(metric.NewPeriodicReader(metricExp, readerOpts...)),
 		metric.WithReader(promExporter),
 		metric.WithResource(res),
 	)
