@@ -53,23 +53,23 @@ spec:
             httpGet:
               path: /health/live
               port: 8086
-            initialDelaySeconds: 30
+            # initialDelaySeconds: 30
             periodSeconds: 10
-            timeoutSeconds: 240
+            timeoutSeconds: 30
             failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /health/ready
               port: 8086
-            initialDelaySeconds: 30
+            # initialDelaySeconds: 30
             periodSeconds: 10
-            timeoutSeconds: 240
+            timeoutSeconds: 30
             failureThreshold: 6
-          # startupProbe:
-          #   httpGet:
-          #     path: /healthz
-          #     port: 8080
-          #   initialDelaySeconds: 5
-          #   periodSeconds: 10
-          #   timeoutSeconds: 5
-          #   failureThreshold: 30
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: 8086
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
