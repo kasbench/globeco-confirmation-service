@@ -1,0 +1,27 @@
+{{- if eq .Values.autoscaler "vpa" -}}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: globeco-confirmation-service-vpa
+  namespace: globeco
+  labels:
+    app: globeco-confirmation-service
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: globeco-confirmation-service
+  updatePolicy:
+    updateMode: "InPlaceOrRecreate"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: globeco-confirmation-service
+        minAllowed:
+          cpu: 100m
+          memory: 200Mi
+        maxAllowed:
+          cpu: 2000m
+          memory: 2Gi
+        controlledResources: ["cpu", "memory"]
+        controlledValues: RequestsAndLimits
+{{- end -}}
