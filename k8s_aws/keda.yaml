@@ -1,0 +1,26 @@
+{{- if eq .Values.autoscaler "keda" -}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: globeco-confirmation-service-scaledobject
+  namespace: globeco
+  labels:
+    app: globeco-confirmation-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: globeco-confirmation-service 
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  cooldownPeriod: 300
+  pollingInterval: 15
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: globeco-execution-service-kafka.globeco.svc.cluster.local:9092
+        topic: fills
+        consumerGroup: globeco-confirmation-service
+        lagThreshold: "5"
+        offsetResetPolicy: latest
+{{- end -}}
