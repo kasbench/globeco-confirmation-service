@@ -78,7 +78,7 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		MinBytes:    1,
 		MaxBytes:    10e6,                   // 10MB
 		MaxWait:     500 * time.Millisecond, // Reduced for better throughput
-		StartOffset: kafka.LastOffset,
+		StartOffset: kafka.FirstOffset,
 
 		// Error handling
 		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {

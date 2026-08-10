@@ -24,4 +24,8 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.hpa.targetMemoryUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 75
+
 {{- end -}}
