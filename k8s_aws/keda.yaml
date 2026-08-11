@@ -27,6 +27,7 @@ spec:
         topic: fills
         consumerGroup: globeco-confirmation-service
         lagThreshold: "5"
-        offsetResetPolicy: latest
+        activationLagThreshold: "1"
+        offsetResetPolicy: earliest
         scaleToZeroOnInvalidOffset: "true"
 {{- end -}}
