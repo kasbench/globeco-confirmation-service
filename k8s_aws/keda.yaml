@@ -30,4 +30,5 @@ spec:
         activationLagThreshold: "1"
         offsetResetPolicy: earliest
         scaleToZeroOnInvalidOffset: "true"
+        allowGroupNotFound: "true" 
 {{- end -}}
