@@ -3,7 +3,7 @@ module github.com/kasbench/globeco-confirmation-service
 go 1.25.0
 
 require (
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.2.4
 	github.com/leanovate/gopter v0.2.11
 	github.com/prometheus/client_golang v1.23.2
 	github.com/segmentio/kafka-go v0.4.48
