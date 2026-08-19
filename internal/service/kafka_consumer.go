@@ -39,10 +39,14 @@ type KafkaConsumerService struct {
 	batchSize    int
 	commitTicker *time.Ticker
 
-	// Control channels
-	stopCh chan struct{}
-	doneCh chan struct{}
-	wg     sync.WaitGroup
+	// Control channels — ordered shutdown: stopFetch → stopWorkers → stopCommit
+	stopFetchCh   chan struct{}
+	stopWorkersCh chan struct{}
+	stopCommitCh  chan struct{}
+	doneCh        chan struct{}
+	fetchWg       sync.WaitGroup
+	workerWg      sync.WaitGroup
+	commitWg      sync.WaitGroup
 
 	// State tracking
 	isRunning    bool
@@ -114,7 +118,9 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		commitCh:          make(chan kafka.Message, config.Performance.MessageBufferSize),
 		workerCount:       config.Performance.WorkerPoolSize,
 		batchSize:         batchSize,
-		stopCh:            make(chan struct{}),
+		stopFetchCh:       make(chan struct{}),
+		stopWorkersCh:     make(chan struct{}),
+		stopCommitCh:      make(chan struct{}),
 		doneCh:            make(chan struct{}),
 	}
 }
@@ -148,17 +154,17 @@ func (kcs *KafkaConsumerService) Start(ctx context.Context) error {
 	kcs.commitTicker = time.NewTicker(2 * time.Second)
 
 	// Start message fetcher
-	kcs.wg.Add(1)
+	kcs.fetchWg.Add(1)
 	go kcs.fetchLoop(ctx)
 
 	// Start worker goroutines
 	for i := 0; i < kcs.workerCount; i++ {
-		kcs.wg.Add(1)
+		kcs.workerWg.Add(1)
 		go kcs.workerLoop(ctx, i)
 	}
 
 	// Start commit handler
-	kcs.wg.Add(1)
+	kcs.commitWg.Add(1)
 	go kcs.commitLoop(ctx)
 
 	kcs.logger.WithContext(ctx).Info("Kafka consumer started successfully",
@@ -169,7 +175,12 @@ func (kcs *KafkaConsumerService) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the Kafka consumer
+// Stop stops the Kafka consumer with ordered shutdown:
+// 1. Stop fetching new messages
+// 2. Wait for workers to finish processing buffered messages
+// 3. Close messageCh so workers exit cleanly
+// 4. Wait for commit loop to drain and commit all remaining offsets
+// 5. Close the Kafka reader
 func (kcs *KafkaConsumerService) Stop(ctx context.Context) error {
 	kcs.mutex.Lock()
 	defer kcs.mutex.Unlock()
@@ -178,24 +189,31 @@ func (kcs *KafkaConsumerService) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	kcs.logger.WithContext(ctx).Info("Stopping Kafka consumer")
+	kcs.logger.WithContext(ctx).Info("Stopping Kafka consumer (ordered shutdown)")
 
-	// Signal stop
-	close(kcs.stopCh)
+	// Phase 1: Stop the fetch loop so no new messages enter messageCh
+	close(kcs.stopFetchCh)
+	kcs.fetchWg.Wait()
+	kcs.logger.WithContext(ctx).Info("Fetch loop stopped")
 
-	// Stop commit ticker
+	// Phase 2: Close messageCh to signal workers there are no more messages.
+	// Workers will drain remaining buffered messages and exit.
+	close(kcs.messageCh)
+	kcs.workerWg.Wait()
+	kcs.logger.WithContext(ctx).Info("Workers drained and stopped")
+
+	// Phase 3: Stop commit ticker and signal commit loop to drain commitCh
 	if kcs.commitTicker != nil {
 		kcs.commitTicker.Stop()
 	}
+	close(kcs.stopCommitCh)
+	kcs.commitWg.Wait()
+	kcs.logger.WithContext(ctx).Info("Commit loop drained and stopped")
 
-	// Wait for all goroutines to finish
-	kcs.wg.Wait()
-
-	// Close channels
-	close(kcs.messageCh)
+	// Phase 4: Close commitCh (already drained)
 	close(kcs.commitCh)
 
-	// Close reader
+	// Phase 5: Close the Kafka reader
 	if err := kcs.reader.Close(); err != nil {
 		kcs.logger.WithContext(ctx).Warn("Error closing Kafka reader", zap.Error(err))
 	}
@@ -275,7 +293,7 @@ func (kcs *KafkaConsumerService) GetStats() map[string]interface{} {
 
 // fetchLoop fetches messages from Kafka and sends them to workers
 func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
-	defer kcs.wg.Done()
+	defer kcs.fetchWg.Done()
 
 	correlationID := logger.GenerateCorrelationID()
 	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
@@ -284,7 +302,7 @@ func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
 
 	for {
 		select {
-		case <-kcs.stopCh:
+		case <-kcs.stopFetchCh:
 			kcs.logger.WithContext(ctx).Info("Kafka fetch loop stopping")
 			return
 		case <-ctx.Done():
@@ -314,11 +332,11 @@ func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
 			// Success: record poll success metrics
 			kcs.consumerMetrics.RecordPollSuccess(ctx, pollDuration, message.Topic, message.Partition)
 
-			// Send message to workers (non-blocking)
+			// Send message to workers (blocks if buffer is full, with shutdown escape)
 			select {
 			case kcs.messageCh <- message:
 				// Message sent successfully
-			case <-kcs.stopCh:
+			case <-kcs.stopFetchCh:
 				return
 			case <-ctx.Done():
 				return
@@ -329,7 +347,7 @@ func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
 
 // workerLoop processes messages from the message channel
 func (kcs *KafkaConsumerService) workerLoop(ctx context.Context, workerID int) {
-	defer kcs.wg.Done()
+	defer kcs.workerWg.Done()
 
 	correlationID := logger.GenerateCorrelationID()
 	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
@@ -338,51 +356,40 @@ func (kcs *KafkaConsumerService) workerLoop(ctx context.Context, workerID int) {
 		zap.Int("worker_id", workerID),
 	)
 
-	for {
+	for message := range kcs.messageCh {
+		if err := kcs.handleMessage(ctx, message, workerID); err != nil {
+			kcs.logger.WithContext(ctx).Error("Error processing message",
+				zap.Int("worker_id", workerID),
+				zap.Int("partition", message.Partition),
+				zap.Int64("offset", message.Offset),
+				zap.Error(err),
+			)
+			// Still commit failed messages to avoid stranding.
+			// The message has already been sent to the dead letter queue
+			// by the resilience manager. If we skip the commit, parallel
+			// workers processing later offsets on the same partition will
+			// advance the committed offset past this one anyway, permanently
+			// losing it without DLQ tracking.
+		}
+
+		// Always commit the message offset to prevent stranding.
+		// Failed messages are captured in the DLQ for separate retry.
 		select {
-		case <-kcs.stopCh:
-			kcs.logger.WithContext(ctx).Info("Kafka worker stopping",
-				zap.Int("worker_id", workerID),
-			)
-			return
+		case kcs.commitCh <- message:
+			// Message queued for commit
 		case <-ctx.Done():
-			kcs.logger.WithContext(ctx).Info("Kafka worker cancelled",
-				zap.Int("worker_id", workerID),
-			)
 			return
-		case message, ok := <-kcs.messageCh:
-			if !ok {
-				return // Channel closed
-			}
-
-			if err := kcs.handleMessage(ctx, message, workerID); err != nil {
-				kcs.logger.WithContext(ctx).Error("Error processing message",
-					zap.Int("worker_id", workerID),
-					zap.Error(err),
-				)
-				// Don't commit failed messages
-				continue
-			}
-
-			// Send message for commit (non-blocking)
-			select {
-			case kcs.commitCh <- message:
-				// Message queued for commit
-			case <-kcs.stopCh:
-				return
-			case <-ctx.Done():
-				return
-			default:
-				// Commit channel full, log warning but continue
-				kcs.logger.WithContext(ctx).Warn("Commit channel full, message may be reprocessed")
-			}
 		}
 	}
+
+	kcs.logger.WithContext(ctx).Info("Kafka worker stopping (messageCh closed)",
+		zap.Int("worker_id", workerID),
+	)
 }
 
 // commitLoop handles batch commits of processed messages
 func (kcs *KafkaConsumerService) commitLoop(ctx context.Context) {
-	defer kcs.wg.Done()
+	defer kcs.commitWg.Done()
 
 	correlationID := logger.GenerateCorrelationID()
 	ctx = logger.WithCorrelationIDContext(ctx, correlationID)
@@ -395,15 +402,31 @@ func (kcs *KafkaConsumerService) commitLoop(ctx context.Context) {
 
 	for {
 		select {
-		case <-kcs.stopCh:
-			// Commit any remaining messages before stopping
-			if len(messagesToCommit) > 0 {
-				kcs.commitBatch(ctx, messagesToCommit)
+		case <-kcs.stopCommitCh:
+			// Drain all remaining messages from commitCh before stopping.
+			// At this point workers have already exited, so no new messages
+			// will arrive on commitCh.
+			for {
+				select {
+				case msg, ok := <-kcs.commitCh:
+					if !ok {
+						goto drain_done
+					}
+					messagesToCommit = append(messagesToCommit, msg)
+				default:
+					goto drain_done
+				}
 			}
-			kcs.logger.WithContext(ctx).Info("Kafka commit loop stopping")
-			return
-		case <-ctx.Done():
-			kcs.logger.WithContext(ctx).Info("Kafka commit loop cancelled")
+		drain_done:
+			if len(messagesToCommit) > 0 {
+				// Use a fresh context since the parent may be cancelled
+				commitCtx, commitCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				kcs.commitBatch(commitCtx, messagesToCommit)
+				commitCancel()
+			}
+			kcs.logger.WithContext(ctx).Info("Kafka commit loop stopping",
+				zap.Int("final_batch_committed", len(messagesToCommit)),
+			)
 			return
 		case <-kcs.commitTicker.C:
 			// Periodic commit
