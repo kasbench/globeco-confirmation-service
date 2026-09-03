@@ -6,7 +6,17 @@ metadata:
   labels:
     app: globeco-confirmation-service
 spec:
+  {{- if eq .Values.autoscaler "vpa" }}
+  replicas: 2
+  {{- else }}
   replicas: 1
+  {{- end }}
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: globeco-confirmation-service
@@ -87,3 +97,18 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 30
+---
+{{- if eq .Values.autoscaler "vpa" }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: globeco-confirmation-service-pdb
+  namespace: globeco
+  labels:
+    app: globeco-confirmation-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: globeco-confirmation-service
+{{- end }}
