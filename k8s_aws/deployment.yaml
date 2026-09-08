@@ -61,6 +61,10 @@ spec:
               value: "true"
             - name: METRICS_ENABLED
               value: "true"
+            # Artificial per-message processing delay to slow the processing loop
+            # for autoscaling testing. Go duration string (e.g. "50ms", "1s").
+            - name: PROCESSING_SLEEP
+              value: "50ms"
           resizePolicy:
             - resourceName: cpu
               restartPolicy: NotRequired

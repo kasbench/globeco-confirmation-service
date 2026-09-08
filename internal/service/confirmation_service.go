@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/kasbench/globeco-confirmation-service/internal/config"
@@ -72,6 +73,17 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 	var processingError error
 
 	cs.logger.WithContext(ctx).Debug("Processing fill message", zap.Int64("fill_id", fill.ID))
+
+	// Artificial processing delay to slow down the loop for autoscaling testing.
+	// The duration is controlled by the PROCESSING_SLEEP env var (Go duration string,
+	// e.g. "50ms", "1s"). If unset or invalid, no delay is applied.
+	if delay := getProcessingSleep(); delay > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
 
 	// Start tracing span
 	var span interface{}
@@ -191,6 +203,22 @@ func getErrorMessage(err error) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// getProcessingSleep returns the artificial per-message processing delay,
+// controlled by the PROCESSING_SLEEP environment variable. The value is parsed
+// as a Go duration string (e.g. "50ms", "1s"). It returns 0 if the variable is
+// unset, empty, or cannot be parsed.
+func getProcessingSleep() time.Duration {
+	raw := os.Getenv("PROCESSING_SLEEP")
+	if raw == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
 }
 
 // validateFillMessage validates business rules for the fill message

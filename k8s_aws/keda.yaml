@@ -11,9 +11,9 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: globeco-confirmation-service 
-  minReplicaCount: 0
+  minReplicaCount: 1
   maxReplicaCount: 20
-  cooldownPeriod: 300
+  cooldownPeriod: 75
   pollingInterval: 15
   advanced:
     horizontalPodAutoscalerConfig:
@@ -26,7 +26,7 @@ spec:
         bootstrapServers: globeco-execution-service-kafka.globeco.svc.cluster.local:9092
         topic: fills
         consumerGroup: globeco-confirmation-service
-        lagThreshold: "75"
+        lagThreshold: "10"
         activationLagThreshold: "1"
         offsetResetPolicy: earliest
         scaleToZeroOnInvalidOffset: "true"
