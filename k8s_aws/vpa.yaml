@@ -23,5 +23,5 @@ spec:
           cpu: 2000m
           memory: 2Gi
         controlledResources: ["cpu", "memory"]
-        controlledValues: RequestsAndLimits
+        controlledValues: RequestsOnly
 {{- end -}}
