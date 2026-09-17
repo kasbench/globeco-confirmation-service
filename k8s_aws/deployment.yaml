@@ -6,21 +6,7 @@ metadata:
   labels:
     app: globeco-confirmation-service
 spec:
-  {{- if eq .Values.autoscaler "vpa" }}
-  replicas: 2
-  {{- else if eq .Values.autoscaler "horizontal-2" }}
-  replicas: 2
-  {{- else if eq .Values.autoscaler "horizontal-3" }}
-  replicas: 3
-  {{- else if eq .Values.autoscaler "horizontal-4" }}
-  replicas: 4
-  {{- else if eq .Values.autoscaler "horizontal-5" }}
-  replicas: 5
-  {{- else if eq .Values.autoscaler "horizontal-6" }}
-  replicas: 6
-  {{- else }}
-  replicas: 1
-  {{- end }}
+  {{- include "globeco.replicas" . | nindent 2 }}
   minReadySeconds: 10
   strategy:
     type: RollingUpdate
@@ -80,24 +66,7 @@ spec:
               restartPolicy: NotRequired
             - resourceName: memory
               restartPolicy: RestartContainer
-          resources:
-            requests:
-              memory: "100Mi"
-              {{- if eq .Values.autoscaler "vertical-2" }}
-              cpu: "75.0m"
-              {{- else if eq .Values.autoscaler "vertical-3" }}
-              cpu: "100.0m"
-              {{- else if eq .Values.autoscaler "vertical-4" }}
-              cpu: "125.0m"
-              {{- else if eq .Values.autoscaler "vertical-5" }}
-              cpu: "150.0m"
-              {{- else if eq .Values.autoscaler "vertical-6" }}
-              cpu: "175.0m"
-              {{- else }}
-              cpu: "50m"
-              {{- end }}
-            limits:
-              memory: "6000Mi"
+          {{- include "globeco.globecoConfirmationServiceResources" . | nindent 10 }}
           livenessProbe:
             httpGet:
               path: /health/live
