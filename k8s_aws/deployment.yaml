@@ -36,10 +36,18 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8086
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sh", "-c", "sleep 5"]
+          # NOTE: No exec-based preStop hook here. The image is distroless
+          # (gcr.io/distroless/static-debian12), which has no shell, so an
+          # `sh -c` preStop command fails and produces FailedPreStopHook events.
+          # Graceful shutdown is already handled by the service itself: it traps
+          # SIGTERM, cancels its context, drains the Kafka consumer in order, and
+          # shuts down the HTTP server within terminationGracePeriodSeconds.
+          # If a pre-stop delay is ever needed, use the shell-free native sleep
+          # action (Kubernetes >= 1.29):
+          #   lifecycle:
+          #     preStop:
+          #       sleep:
+          #         seconds: 5
           env:
             - name: OTEL_SERVICE_NAME
               value: "globeco-confirmation-service"
