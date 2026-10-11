@@ -11,6 +11,7 @@ import (
 type ExecutionServiceClientInterface interface {
 	GetExecution(ctx context.Context, executionID int64) (*domain.ExecutionResponse, error)
 	UpdateExecution(ctx context.Context, executionID int64, updateReq *domain.ExecutionUpdateRequest) (*domain.ExecutionUpdateResponse, error)
+	UpdateExecutionWithRefetch(ctx context.Context, executionID int64, buildRequest func(execution *domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error)) (*domain.ExecutionUpdateResponse, error)
 	IsHealthy(ctx context.Context) bool
 	GetStats() map[string]interface{}
 }

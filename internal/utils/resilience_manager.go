@@ -65,23 +65,36 @@ func (rm *ResilienceManager) ExecuteWithResilience(ctx context.Context, operatio
 	timeoutCtx, cancel := rm.createTimeoutContext(ctx, operation)
 	defer cancel()
 
-	// Execute with circuit breaker protection
+	// Execute with circuit breaker protection. The retry cycle runs exactly ONCE;
+	// its result is captured so the DLQ path can reuse it instead of re-executing the
+	// operation (which would double the number of attempts against the target).
+	var retryResult *RetryResult
 	err := rm.circuitBreaker.Execute(timeoutCtx, func(ctx context.Context) error {
 		// Execute with retry logic
-		result := rm.retryer.Execute(ctx, operation, fn)
-		return result.LastError
+		retryResult = rm.retryer.Execute(ctx, operation, fn)
+		return retryResult.LastError
 	})
 
-	// If all retries failed, add to dead letter queue
+	// If the operation ultimately failed, add it to the dead letter queue using the
+	// result of the single retry cycle above. retryResult may be nil if the circuit
+	// breaker rejected the call before fn ran (e.g. breaker open), in which case there
+	// is no per-attempt history to record.
 	if err != nil {
-		retryResult := rm.retryer.Execute(timeoutCtx, operation, fn)
-		if !retryResult.Success {
+		attempts := 0
+		var errorHistory []error
+		failed := true
+		if retryResult != nil {
+			failed = !retryResult.Success
+			attempts = retryResult.Attempts
+			errorHistory = retryResult.ErrorHistory
+		}
+		if failed {
 			dlqErr := rm.deadLetterQueue.Add(
 				ctx,
 				metadata,
-				fmt.Sprintf("Operation '%s' failed after %d attempts", operation, retryResult.Attempts),
-				retryResult.ErrorHistory,
-				retryResult.Attempts,
+				fmt.Sprintf("Operation '%s' failed after %d attempts", operation, attempts),
+				errorHistory,
+				attempts,
 				metadata,
 			)
 			if dlqErr != nil {

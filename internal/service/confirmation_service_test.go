@@ -18,9 +18,33 @@ func float64Ptr(f float64) *float64 {
 	return &f
 }
 
+// setupRefetchUpdate configures the mock's UpdateExecutionWithRefetch to emulate the
+// real client's retried unit of work: fetch the execution, then invoke buildRequest
+// (validation + request construction) with it. If fetchErr is non-nil it is returned
+// without calling buildRequest. If buildRequest returns an error that error is
+// returned. Otherwise updateResp/updateErr are returned.
+// setupRefetchUpdate configures the mock's UpdateExecutionWithRefetch to emulate the
+// real client's retried unit of work: fetch the execution, then invoke buildRequest
+// (validation + request construction) with it. If fetchErr is non-nil the mock returns
+// it without invoking buildRequest. If buildRequest returns an error that error is
+// returned. Otherwise updateResp/updateErr are returned. The buildRequest invocation is
+// driven by the mock method itself (see UpdateExecutionWithRefetch) via the execution
+// stored on this expectation.
+func setupRefetchUpdate(mockClient *MockExecutionServiceClient, executionID int64, execution *domain.ExecutionResponse, fetchErr error, updateResp *domain.ExecutionUpdateResponse, updateErr error) {
+	mockClient.refetchExecution = execution
+	mockClient.refetchFetchErr = fetchErr
+	mockClient.On("UpdateExecutionWithRefetch", mock.Anything, executionID, mock.AnythingOfType("func(*domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error)")).
+		Return(updateResp, updateErr)
+}
+
 // MockExecutionServiceClient is a mock implementation of ExecutionServiceClientInterface
 type MockExecutionServiceClient struct {
 	mock.Mock
+
+	// Fields used by UpdateExecutionWithRefetch to emulate the real client's
+	// GET-then-build-request flow (see setupRefetchUpdate).
+	refetchExecution *domain.ExecutionResponse
+	refetchFetchErr  error
 }
 
 func (m *MockExecutionServiceClient) GetExecution(ctx context.Context, executionID int64) (*domain.ExecutionResponse, error) {
@@ -33,6 +57,25 @@ func (m *MockExecutionServiceClient) GetExecution(ctx context.Context, execution
 
 func (m *MockExecutionServiceClient) UpdateExecution(ctx context.Context, executionID int64, updateReq *domain.ExecutionUpdateRequest) (*domain.ExecutionUpdateResponse, error) {
 	args := m.Called(ctx, executionID, updateReq)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.ExecutionUpdateResponse), args.Error(1)
+}
+
+func (m *MockExecutionServiceClient) UpdateExecutionWithRefetch(ctx context.Context, executionID int64, buildRequest func(execution *domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error)) (*domain.ExecutionUpdateResponse, error) {
+	args := m.Called(ctx, executionID, buildRequest)
+
+	// Emulate the real client: a fetch failure short-circuits before buildRequest.
+	if m.refetchFetchErr != nil {
+		return nil, m.refetchFetchErr
+	}
+	// Run validation + request construction against the fetched execution so a
+	// validation failure propagates exactly as it would from the real client.
+	if _, err := buildRequest(m.refetchExecution); err != nil {
+		return nil, err
+	}
+
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -175,9 +218,10 @@ func TestConfirmationService_HandleFillMessage_Success(t *testing.T) {
 		Version:         3,
 	}
 
-	// Setup expectations
-	mockClient.On("GetExecution", mock.Anything, int64(456)).Return(currentExecution, nil)
-	mockClient.On("UpdateExecution", mock.Anything, int64(456), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResponse, nil)
+	// Setup expectations. The client re-fetches the execution and runs buildRequest
+	// (validation + request construction) inside its retried unit of work; the mock
+	// mirrors that by invoking the callback with the current execution.
+	setupRefetchUpdate(mockClient, int64(456), currentExecution, nil, updateResponse, nil)
 
 	// Execute
 	err = service.HandleFillMessage(ctx, fill)
@@ -235,16 +279,16 @@ func TestConfirmationService_HandleFillMessage_GetExecutionError(t *testing.T) {
 		AveragePrice:       190.41,
 	}
 
-	// Setup expectations
+	// Setup expectations: the re-fetch inside UpdateExecutionWithRefetch fails.
 	expectedError := domain.NewNotFoundError("execution", "execution not found")
-	mockClient.On("GetExecution", mock.Anything, int64(456)).Return(nil, expectedError)
+	setupRefetchUpdate(mockClient, int64(456), nil, expectedError, nil, nil)
 
 	// Execute
 	err = service.HandleFillMessage(ctx, fill)
 
 	// Assert
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get execution 456")
+	assert.Contains(t, err.Error(), "failed to update execution 456")
 	mockClient.AssertExpectations(t)
 }
 
@@ -308,15 +352,16 @@ func TestConfirmationService_HandleFillMessage_ValidationError(t *testing.T) {
 		Version:         2,
 	}
 
-	// Setup expectations
-	mockClient.On("GetExecution", mock.Anything, int64(456)).Return(currentExecution, nil)
+	// Setup expectations: validation runs inside buildRequest against the fetched
+	// execution and fails, so no PUT is issued.
+	setupRefetchUpdate(mockClient, int64(456), currentExecution, nil, nil, nil)
 
 	// Execute
 	err = service.HandleFillMessage(ctx, fill)
 
 	// Assert
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "fill message validation failed")
+	assert.Contains(t, err.Error(), "failed to update execution")
 	assert.Contains(t, err.Error(), "trade_type_mismatch")
 	mockClient.AssertExpectations(t)
 }
@@ -627,8 +672,7 @@ func TestConfirmationService_HandleFillMessage_AllocationSuccess(t *testing.T) {
 		AveragePrice:    float64Ptr(10.0),
 		Version:         2,
 	}
-	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(execResp, nil)
-	mockExecClient.On("UpdateExecution", mock.Anything, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	setupRefetchUpdate(mockExecClient, int64(2), execResp, nil, updateResp, nil)
 	mockAllocClient.On("PostExecution", mock.Anything, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(nil)
 
 	err := service.HandleFillMessage(ctx, fill)
@@ -697,8 +741,7 @@ func TestConfirmationService_HandleFillMessage_AllocationFailure_DLQ(t *testing.
 		AveragePrice:    float64Ptr(10.0),
 		Version:         2,
 	}
-	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(execResp, nil)
-	mockExecClient.On("UpdateExecution", mock.Anything, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	setupRefetchUpdate(mockExecClient, int64(2), execResp, nil, updateResp, nil)
 	mockAllocClient.On("PostExecution", mock.Anything, mock.AnythingOfType("*domain.AllocationServiceExecutionDTO")).Return(assert.AnError)
 	mockResilience.On("AddToDeadLetterQueue", mock.Anything, mock.Anything, "allocation-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
 		return meta["service"] == "allocation-service"
@@ -750,7 +793,7 @@ func TestConfirmationService_HandleFillMessage_BothFailures_DLQ(t *testing.T) {
 		Version:             1,
 	}
 	execErr := assert.AnError
-	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(nil, execErr)
+	setupRefetchUpdate(mockExecClient, int64(2), nil, execErr, nil, nil)
 	mockResilience.On("AddToDeadLetterQueue", mock.Anything, fill, "execution-service failure", mock.Anything, 1, mock.MatchedBy(func(meta map[string]interface{}) bool {
 		return meta["service"] == "execution-service"
 	})).Return(nil)
@@ -826,8 +869,7 @@ func TestConfirmationService_HandleFillMessage_IsOpenTrue_NoAllocationCall(t *te
 		AveragePrice:    float64Ptr(9.0),
 		Version:         2,
 	}
-	mockExecClient.On("GetExecution", mock.Anything, int64(2)).Return(execResp, nil)
-	mockExecClient.On("UpdateExecution", mock.Anything, int64(2), mock.AnythingOfType("*domain.ExecutionUpdateRequest")).Return(updateResp, nil)
+	setupRefetchUpdate(mockExecClient, int64(2), execResp, nil, updateResp, nil)
 	// AllocationServiceClient should NOT be called
 
 	err := service.HandleFillMessage(ctx, fill)

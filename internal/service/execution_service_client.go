@@ -261,6 +261,191 @@ func (esc *ExecutionServiceClient) UpdateExecution(ctx context.Context, executio
 	return response, nil
 }
 
+// UpdateExecutionWithRefetch updates an execution, re-fetching the current version
+// immediately before each PUT attempt. This makes the GET-version-then-PUT pair the
+// retried unit of work, so an optimistic-lock conflict (surfaced by the execution
+// service as HTTP 500, or 409) self-heals on the next attempt instead of re-sending
+// a stale version forever.
+//
+// buildRequest receives the freshly fetched execution and returns the update request
+// to send (typically fill.ToUpdateRequest(execution.Version)). It may return a
+// non-retryable error (e.g. a business-rule validation failure) to abort the retry
+// cycle without issuing the PUT.
+func (esc *ExecutionServiceClient) UpdateExecutionWithRefetch(
+	ctx context.Context,
+	executionID int64,
+	buildRequest func(execution *domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error),
+) (*domain.ExecutionUpdateResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/execution/%d", esc.config.BaseURL, executionID)
+	getURL := fmt.Sprintf("%s/api/v1/execution/%d", esc.config.BaseURL, executionID)
+
+	correlationID := logger.GetCorrelationID(ctx)
+	esc.logger.WithContext(ctx).Debug("Updating execution in Execution Service (with re-fetch)",
+		zap.Int64("execution_id", executionID),
+		zap.String("url", url),
+	)
+
+	var response *domain.ExecutionUpdateResponse
+
+	err := esc.resilienceManager.ExecuteAPICall(ctx, "PUT", url, func(ctx context.Context) error {
+		// Re-fetch the current execution (and thus the current version) at the start
+		// of every attempt so a retried PUT carries a fresh version rather than the
+		// stale one that lost the previous optimistic-lock race.
+		execution, err := esc.getExecution(ctx, getURL, executionID, correlationID)
+		if err != nil {
+			return err
+		}
+
+		// Build the update request from the freshly fetched execution. A non-retryable
+		// error here (e.g. validation) aborts the retry cycle without a PUT.
+		updateReq, err := buildRequest(execution)
+		if err != nil {
+			return err
+		}
+
+		// Start tracing span
+		var span interface{}
+		if esc.tracingProvider != nil {
+			ctx, span = esc.tracingProvider.StartHTTPClientSpan(ctx, "PUT", url)
+			defer func() {
+				if s, ok := span.(interface{ End() }); ok {
+					s.End()
+				}
+			}()
+		}
+
+		// Marshal request body
+		requestBody, err := json.Marshal(updateReq)
+		if err != nil {
+			return domain.NewValidationError("invalid request", "failed to marshal update request").
+				WithCorrelationID(correlationID)
+		}
+
+		// Create HTTP request
+		req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(requestBody))
+		if err != nil {
+			return domain.NewExternalError("execution-service", "failed to create request", err, true).
+				WithCorrelationID(correlationID)
+		}
+
+		// Set headers
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Correlation-ID", correlationID)
+
+		// Make the request
+		resp, err := esc.httpClient.Do(req)
+		if err != nil {
+			return domain.NewExternalError("execution-service", "request failed", err, true).
+				WithCorrelationID(correlationID)
+		}
+		defer resp.Body.Close()
+
+		// Read response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return domain.NewExternalError("execution-service", "failed to read response body", err, true).
+				WithCorrelationID(correlationID)
+		}
+
+		// Check status code
+		if resp.StatusCode != http.StatusOK {
+			return esc.handleErrorResponse(resp.StatusCode, body, correlationID)
+		}
+
+		// Parse response
+		var updateResp domain.ExecutionUpdateResponse
+		if err := json.Unmarshal(body, &updateResp); err != nil {
+			return domain.NewExternalError("execution-service", "failed to parse response", err, false).
+				WithCorrelationID(correlationID)
+		}
+
+		response = &updateResp
+		return nil
+	})
+
+	if err != nil {
+		esc.logger.WithContext(ctx).Error("Failed to update execution",
+			zap.Int64("execution_id", executionID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	esc.logger.WithContext(ctx).Debug("Successfully updated execution",
+		zap.Int64("execution_id", executionID),
+		zap.Int("new_version", response.Version),
+	)
+
+	return response, nil
+}
+
+// getExecution performs a single GET of the execution without its own retry wrapping.
+// It is used inside UpdateExecutionWithRefetch so the GET and PUT share one retried
+// unit of work. Error classification mirrors GetExecution.
+func (esc *ExecutionServiceClient) getExecution(ctx context.Context, url string, executionID int64, correlationID string) (*domain.ExecutionResponse, error) {
+	// Start tracing span
+	var span interface{}
+	if esc.tracingProvider != nil {
+		ctx, span = esc.tracingProvider.StartHTTPClientSpan(ctx, "GET", url)
+		defer func() {
+			if s, ok := span.(interface{ End() }); ok {
+				s.End()
+			}
+		}()
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, domain.NewExternalError("execution-service", "failed to create request", err, true).
+			WithCorrelationID(correlationID)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Correlation-ID", correlationID)
+
+	// Make the request
+	resp, err := esc.httpClient.Do(req)
+	if err != nil {
+		return nil, domain.NewExternalError("execution-service", "request failed", err, true).
+			WithCorrelationID(correlationID)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, domain.NewExternalError("execution-service", "failed to read response body", err, true).
+			WithCorrelationID(correlationID)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, esc.handleErrorResponse(resp.StatusCode, body, correlationID)
+	}
+
+	// Parse response
+	var execResp domain.ExecutionResponse
+	if err := json.Unmarshal(body, &execResp); err != nil {
+		return nil, domain.NewExternalError("execution-service", "failed to parse response", err, false).
+			WithCorrelationID(correlationID)
+	}
+
+	// Check if returned ID matches requested ID
+	if execResp.ID != executionID {
+		esc.logger.WithContext(ctx).Warn("Execution Service returned different ID than requested",
+			zap.Int64("requested_id", executionID),
+			zap.Int64("returned_id", execResp.ID),
+			zap.String("url", url),
+		)
+	}
+
+	return &execResp, nil
+}
+
 // IsHealthy checks if the Execution Service is healthy
 func (esc *ExecutionServiceClient) IsHealthy(ctx context.Context) bool {
 	// Create a health check context with shorter timeout

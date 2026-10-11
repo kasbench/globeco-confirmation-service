@@ -318,34 +318,26 @@ func (cs *ConfirmationService) validateFillMessage(ctx context.Context, fill *do
 	return nil
 }
 
-// handleExecutionServiceCall handles the interaction with the Execution Service
+// handleExecutionServiceCall handles the interaction with the Execution Service.
+//
+// The GET-version-then-PUT pair is executed as a single retried unit of work: on each
+// attempt the current execution (and its version) is re-fetched immediately before the
+// PUT. This way an optimistic-lock conflict (returned by the execution service as HTTP
+// 500, or 409) self-heals on the next attempt instead of re-sending a stale version
+// forever. The resilience/retry/circuit-breaker wrapping around the PUT is preserved.
 func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, fill *domain.Fill) (*domain.ExecutionUpdateResponse, bool, error) {
-	// Get current execution from Execution Service to retrieve version
-	execution, err := cs.executionClient.GetExecution(ctx, fill.ExecutionServiceID)
-	if err != nil {
-		processingError := fmt.Errorf("failed to get execution %d: %w", fill.ExecutionServiceID, err)
-		cs.metrics.RecordMessageFailed()
-		if cs.resilienceManager != nil {
-			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
-		}
-		return nil, true, processingError
-	}
+	updateResponse, err := cs.executionClient.UpdateExecutionWithRefetch(ctx, fill.ExecutionServiceID,
+		func(execution *domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error) {
+			// Business rule validation against the freshly fetched execution. A
+			// validation failure is non-retryable and aborts the retry cycle.
+			if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
+				return nil, err
+			}
 
-	// Business rule validation against current execution
-	if err := cs.validateFillMessage(ctx, fill, execution); err != nil {
-		processingError := fmt.Errorf("fill message validation failed: %w", err)
-		cs.metrics.RecordMessageFailed()
-		if cs.resilienceManager != nil {
-			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
-		}
-		return nil, true, processingError
-	}
-
-	// Create update request using the current version
-	updateRequest := fill.ToUpdateRequest(execution.Version)
-
-	// Update execution in Execution Service
-	updateResponse, err := cs.executionClient.UpdateExecution(ctx, fill.ExecutionServiceID, updateRequest)
+			// Create update request using the current version.
+			return fill.ToUpdateRequest(execution.Version), nil
+		},
+	)
 	if err != nil {
 		processingError := fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
 		cs.metrics.RecordMessageFailed()
