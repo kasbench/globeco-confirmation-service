@@ -263,9 +263,13 @@ func (esc *ExecutionServiceClient) UpdateExecution(ctx context.Context, executio
 
 // UpdateExecutionWithRefetch updates an execution, re-fetching the current version
 // immediately before each PUT attempt. This makes the GET-version-then-PUT pair the
-// retried unit of work, so an optimistic-lock conflict (surfaced by the execution
-// service as HTTP 500, or 409) self-heals on the next attempt instead of re-sending
-// a stale version forever.
+// retried unit of work, so an optimistic-lock conflict self-heals on the next attempt
+// instead of re-sending a stale version forever.
+//
+// The execution service surfaces an optimistic-lock conflict as HTTP 500, which is
+// classified as retryable and therefore drives the re-fetch-and-retry. (An HTTP 409
+// would map to a non-retryable ConflictError and would NOT self-heal; the execution
+// service does not currently return 409 for version mismatches.)
 //
 // buildRequest receives the freshly fetched execution and returns the update request
 // to send (typically fill.ToUpdateRequest(execution.Version)). It may return a
