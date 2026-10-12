@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ type KafkaConsumerService struct {
 	messageHandler MessageHandler
 
 	// Parallel processing
-	messageCh    chan kafka.Message
+	workerChs    []chan kafka.Message
 	commitCh     chan kafka.Message
 	workerCount  int
 	batchSize    int
@@ -104,7 +105,7 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		batchSize = 10
 	}
 
-	return &KafkaConsumerService{
+	kcs := &KafkaConsumerService{
 		config:            config.Kafka,
 		performanceConfig: config.Performance,
 		reader:            reader,
@@ -114,7 +115,6 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		resilienceManager: config.ResilienceManager,
 		tracingProvider:   config.TracingProvider,
 		messageHandler:    config.MessageHandler,
-		messageCh:         make(chan kafka.Message, config.Performance.MessageBufferSize),
 		commitCh:          make(chan kafka.Message, config.Performance.MessageBufferSize),
 		workerCount:       config.Performance.WorkerPoolSize,
 		batchSize:         batchSize,
@@ -123,6 +123,38 @@ func NewKafkaConsumerService(config KafkaConsumerConfig) *KafkaConsumerService {
 		stopCommitCh:      make(chan struct{}),
 		doneCh:            make(chan struct{}),
 	}
+
+	// One buffered channel per worker so each execution id is pinned to a single
+	// worker (hash-routed in fetchLoop) and processed serially.
+	kcs.workerChs = make([]chan kafka.Message, kcs.workerCount)
+	for i := range kcs.workerChs {
+		kcs.workerChs[i] = make(chan kafka.Message, config.Performance.MessageBufferSize)
+	}
+
+	return kcs
+}
+
+// workerIndexFor maps an execution id to a worker index using a stateless modulo
+// hash. The uint64 conversion makes negative ids route deterministically without a
+// negative modulo. Returns 0 when workerCount <= 0 so the function is total.
+func workerIndexFor(executionID int64, workerCount int) int {
+	if workerCount <= 0 {
+		return 0
+	}
+	return int(uint64(executionID) % uint64(workerCount))
+}
+
+// workerIndexForKey maps an arbitrary message key to a worker index using an FNV-1a
+// hash. Used as a deterministic fallback when a message value cannot be parsed for its
+// execution id. An empty key hashes deterministically (to 0). Returns 0 when
+// workerCount <= 0 so the function is total.
+func workerIndexForKey(key []byte, workerCount int) int {
+	if workerCount <= 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	_, _ = h.Write(key)
+	return int(h.Sum64() % uint64(workerCount))
 }
 
 // Start starts the Kafka consumer
@@ -178,7 +210,7 @@ func (kcs *KafkaConsumerService) Start(ctx context.Context) error {
 // Stop stops the Kafka consumer with ordered shutdown:
 // 1. Stop fetching new messages
 // 2. Wait for workers to finish processing buffered messages
-// 3. Close messageCh so workers exit cleanly
+// 3. Close each per-worker channel so workers exit cleanly
 // 4. Wait for commit loop to drain and commit all remaining offsets
 // 5. Close the Kafka reader
 func (kcs *KafkaConsumerService) Stop(ctx context.Context) error {
@@ -191,14 +223,17 @@ func (kcs *KafkaConsumerService) Stop(ctx context.Context) error {
 
 	kcs.logger.WithContext(ctx).Info("Stopping Kafka consumer (ordered shutdown)")
 
-	// Phase 1: Stop the fetch loop so no new messages enter messageCh
+	// Phase 1: Stop the fetch loop so no new messages enter the worker channels
 	close(kcs.stopFetchCh)
 	kcs.fetchWg.Wait()
 	kcs.logger.WithContext(ctx).Info("Fetch loop stopped")
 
-	// Phase 2: Close messageCh to signal workers there are no more messages.
-	// Workers will drain remaining buffered messages and exit.
-	close(kcs.messageCh)
+	// Phase 2: Close every per-worker channel to signal workers there are no more
+	// messages. Workers will drain their remaining buffered messages and exit.
+	// Safe because the only sender (fetchLoop) has already returned (Phase 1).
+	for i := range kcs.workerChs {
+		close(kcs.workerChs[i])
+	}
 	kcs.workerWg.Wait()
 	kcs.logger.WithContext(ctx).Info("Workers drained and stopped")
 
@@ -265,10 +300,16 @@ func (kcs *KafkaConsumerService) GetStats() map[string]interface{} {
 		"batch_size":     kcs.batchSize,
 	}
 
-	// Add channel stats
-	if kcs.messageCh != nil {
-		stats["message_queue_length"] = len(kcs.messageCh)
-		stats["message_queue_capacity"] = cap(kcs.messageCh)
+	// Add channel stats aggregated across all per-worker channels
+	if kcs.workerChs != nil {
+		queueLength := 0
+		queueCapacity := 0
+		for _, ch := range kcs.workerChs {
+			queueLength += len(ch)
+			queueCapacity += cap(ch)
+		}
+		stats["message_queue_length"] = queueLength
+		stats["message_queue_capacity"] = queueCapacity
 	}
 
 	if kcs.commitCh != nil {
@@ -332,9 +373,26 @@ func (kcs *KafkaConsumerService) fetchLoop(ctx context.Context) {
 			// Success: record poll success metrics
 			kcs.consumerMetrics.RecordPollSuccess(ctx, pollDuration, message.Topic, message.Partition)
 
-			// Send message to workers (blocks if buffer is full, with shutdown escape)
+			// Hash-route the message to a worker by execution id so all messages
+			// for a given execution are processed serially by one worker. Parse
+			// only the routing key from the value (full unmarshal + validation
+			// still happens later in handleMessage). On parse failure, fall back
+			// to a deterministic key-based hash and STILL deliver the message so
+			// existing validation/DLQ handling runs.
+			var route struct {
+				ExecutionServiceID int64 `json:"executionServiceId"`
+			}
+			var idx int
+			if err := json.Unmarshal(message.Value, &route); err == nil && route.ExecutionServiceID != 0 {
+				idx = workerIndexFor(route.ExecutionServiceID, kcs.workerCount)
+			} else {
+				idx = workerIndexForKey(message.Key, kcs.workerCount)
+			}
+
+			// Send message to the chosen worker (blocks if buffer is full, with
+			// shutdown escape).
 			select {
-			case kcs.messageCh <- message:
+			case kcs.workerChs[idx] <- message:
 				// Message sent successfully
 			case <-kcs.stopFetchCh:
 				return
@@ -356,7 +414,7 @@ func (kcs *KafkaConsumerService) workerLoop(ctx context.Context, workerID int) {
 		zap.Int("worker_id", workerID),
 	)
 
-	for message := range kcs.messageCh {
+	for message := range kcs.workerChs[workerID] {
 		if err := kcs.handleMessage(ctx, message, workerID); err != nil {
 			kcs.logger.WithContext(ctx).Error("Error processing message",
 				zap.Int("worker_id", workerID),
@@ -382,7 +440,7 @@ func (kcs *KafkaConsumerService) workerLoop(ctx context.Context, workerID int) {
 		}
 	}
 
-	kcs.logger.WithContext(ctx).Info("Kafka worker stopping (messageCh closed)",
+	kcs.logger.WithContext(ctx).Info("Kafka worker stopping (worker channel closed)",
 		zap.Int("worker_id", workerID),
 	)
 }
