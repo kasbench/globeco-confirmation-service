@@ -25,7 +25,7 @@ kafka:
 execution_service:
   base_url: "http://globeco-execution-service:8084"
   timeout: "10s"
-  max_retries: 3
+  max_retries: 5
   retry_backoff: "100ms"
   circuit_breaker:
     failure_threshold: 5
