@@ -33,8 +33,13 @@ func float64Ptr(f float64) *float64 {
 func setupRefetchUpdate(mockClient *MockExecutionServiceClient, executionID int64, execution *domain.ExecutionResponse, fetchErr error, updateResp *domain.ExecutionUpdateResponse, updateErr error) {
 	mockClient.refetchExecution = execution
 	mockClient.refetchFetchErr = fetchErr
+	// handleExecutionServiceCall now performs a read-only GetExecution before the
+	// update to detect stale out-of-order fills. Model that pre-GET here using the
+	// same execution/fetchErr that drive the refetch so existing tests still pass.
+	mockClient.On("GetExecution", mock.Anything, executionID).Return(execution, fetchErr)
+	// Marked Maybe() because when the pre-GET fails the update is never attempted.
 	mockClient.On("UpdateExecutionWithRefetch", mock.Anything, executionID, mock.AnythingOfType("func(*domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error)")).
-		Return(updateResp, updateErr)
+		Return(updateResp, updateErr).Maybe()
 }
 
 // MockExecutionServiceClient is a mock implementation of ExecutionServiceClientInterface
@@ -876,4 +881,128 @@ func TestConfirmationService_HandleFillMessage_IsOpenTrue_NoAllocationCall(t *te
 	assert.NoError(t, err)
 	mockExecClient.AssertExpectations(t)
 	mockAllocClient.AssertNotCalled(t, "PostExecution", mock.Anything, mock.Anything)
+}
+
+// Test: a stale out-of-order fill (quantityFilled below the current execution's
+// quantityFilled) is discarded. No PUT is issued, the handler returns success, and the
+// fill is recorded as a success in duplicate detection so it is not reprocessed.
+func TestConfirmationService_HandleFillMessage_StaleFillDiscarded(t *testing.T) {
+	mockExecClient := &MockExecutionServiceClient{}
+	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
+	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+	tracingProvider, _ := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
+	dedup := NewDuplicateDetectionService(DuplicateDetectionConfig{Logger: appLogger})
+	defer dedup.Stop()
+
+	service := NewConfirmationService(ConfirmationServiceConfig{
+		ExecutionClient:    mockExecClient,
+		Logger:             appLogger,
+		Metrics:            appMetrics,
+		TracingProvider:    tracingProvider,
+		DuplicateDetection: dedup,
+	})
+
+	ctx := context.Background()
+	// Mirrors a real log line: incoming fill_quantity_filled 20, current 103.
+	fill := &domain.Fill{
+		ID:                 492,
+		ExecutionServiceID: 456,
+		IsOpen:             false,
+		ExecutionStatus:    "FULL",
+		TradeType:          "BUY",
+		Destination:        "ML",
+		SecurityID:         "SEC123",
+		Ticker:             "IBM",
+		Quantity:           1000,
+		QuantityFilled:     20,
+		AveragePrice:       190.41,
+		Version:            1,
+	}
+	currentExecution := &domain.ExecutionResponse{
+		ID:              456,
+		ExecutionStatus: "PARTIAL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC123",
+		Quantity:        1000,
+		QuantityFilled:  103,
+		AveragePrice:    float64Ptr(190.0),
+		Version:         2,
+	}
+
+	// The pre-GET returns the current (higher) quantity. No PUT must be attempted.
+	mockExecClient.On("GetExecution", mock.Anything, int64(456)).Return(currentExecution, nil).Once()
+
+	err := service.HandleFillMessage(ctx, fill)
+
+	assert.NoError(t, err)
+	mockExecClient.AssertExpectations(t)
+	mockExecClient.AssertNotCalled(t, "UpdateExecutionWithRefetch", mock.Anything, mock.Anything, mock.Anything)
+
+	// The fill must have been recorded as a prior success, so re-checking it now
+	// reports an exact duplicate that should NOT be processed again.
+	dupResult := dedup.CheckDuplicate(ctx, fill)
+	assert.True(t, dupResult.IsDuplicate)
+	assert.False(t, dupResult.ShouldProcess)
+}
+
+// Test: an equal quantityFilled is NOT discarded; the PUT proceeds as before.
+func TestConfirmationService_HandleFillMessage_EqualQuantityUpdates(t *testing.T) {
+	mockExecClient := &MockExecutionServiceClient{}
+	appLogger, _ := logger.New(logger.Config{Level: "info", Format: "json", Output: "stdout", ServiceName: "test"})
+	appMetrics := metrics.New(metrics.Config{Enabled: true, Namespace: "test"})
+	tracingProvider, _ := utils.NewTracingProvider(utils.TracingConfig{Enabled: true, ServiceName: "test", Exporter: "stdout"})
+
+	service := NewConfirmationService(ConfirmationServiceConfig{
+		ExecutionClient: mockExecClient,
+		Logger:          appLogger,
+		Metrics:         appMetrics,
+		TracingProvider: tracingProvider,
+	})
+
+	ctx := context.Background()
+	fill := &domain.Fill{
+		ID:                 123,
+		ExecutionServiceID: 456,
+		IsOpen:             false,
+		ExecutionStatus:    "FULL",
+		TradeType:          "BUY",
+		Destination:        "ML",
+		SecurityID:         "SEC123",
+		Ticker:             "IBM",
+		Quantity:           1000,
+		QuantityFilled:     500,
+		AveragePrice:       190.41,
+		Version:            1,
+	}
+	currentExecution := &domain.ExecutionResponse{
+		ID:              456,
+		ExecutionStatus: "PARTIAL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC123",
+		Quantity:        1000,
+		QuantityFilled:  500, // equal to the incoming fill
+		AveragePrice:    float64Ptr(190.0),
+		Version:         2,
+	}
+	updateResponse := &domain.ExecutionUpdateResponse{
+		ID:              456,
+		ExecutionStatus: "FULL",
+		TradeType:       "BUY",
+		Destination:     "ML",
+		SecurityID:      "SEC123",
+		Quantity:        1000,
+		QuantityFilled:  500,
+		AveragePrice:    float64Ptr(190.41),
+		Version:         3,
+	}
+
+	setupRefetchUpdate(mockExecClient, int64(456), currentExecution, nil, updateResponse, nil)
+
+	err := service.HandleFillMessage(ctx, fill)
+
+	assert.NoError(t, err)
+	mockExecClient.AssertExpectations(t)
+	mockExecClient.AssertCalled(t, "UpdateExecutionWithRefetch", mock.Anything, int64(456), mock.Anything)
 }

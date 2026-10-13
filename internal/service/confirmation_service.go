@@ -118,7 +118,15 @@ func (cs *ConfirmationService) HandleFillMessage(ctx context.Context, fill *doma
 	}
 
 	// Handle Execution Service call
-	updateResponse, execServiceFailed, execErr := cs.handleExecutionServiceCall(ctx, fill)
+	updateResponse, execServiceFailed, skipped, execErr := cs.handleExecutionServiceCall(ctx, fill)
+	if skipped {
+		// The fill was discarded as a stale out-of-order update (its quantityFilled
+		// is below the already-applied current quantity). This is a benign skip: no
+		// PUT was issued, no error is recorded, and the message is treated as a
+		// success so its offset commits and it is not reprocessed.
+		cs.metrics.RecordMessageProcessed()
+		return nil
+	}
 	if execServiceFailed {
 		processingError = execErr
 	}
@@ -273,14 +281,6 @@ func (cs *ConfirmationService) validateFillMessage(ctx context.Context, fill *do
 				fill.QuantityFilled, currentExecution.Quantity))
 	}
 
-	// Check if quantity filled is not decreasing (unless it's a correction)
-	if fill.QuantityFilled < currentExecution.QuantityFilled {
-		cs.logger.WithContext(ctx).Warn("Fill quantity is less than current quantity - possible correction",
-			zap.Int64("fill_quantity_filled", fill.QuantityFilled),
-			zap.Int64("current_quantity_filled", currentExecution.QuantityFilled),
-		)
-	}
-
 	// Check if average price is reasonable (basic sanity check)
 	if fill.AveragePrice <= 0 {
 		return domain.NewValidationError("invalid_average_price",
@@ -321,7 +321,38 @@ func (cs *ConfirmationService) validateFillMessage(ctx context.Context, fill *do
 // HTTP 500, which is retryable and drives the re-fetch-and-retry (a 409 would map to a
 // non-retryable ConflictError and would not self-heal). The resilience/retry/circuit-
 // breaker wrapping around the PUT is preserved.
-func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, fill *domain.Fill) (*domain.ExecutionUpdateResponse, bool, error) {
+//
+// The return tuple is (updateResponse, execServiceFailed, skipped, err):
+//   - skipped is true when the fill is discarded as a stale out-of-order update
+//     (its quantityFilled is below the already-applied current quantity). In that
+//     case no PUT is issued, no DLQ record is created, and no error is returned; the
+//     caller treats it as a benign success.
+//   - execServiceFailed is true when the GET or PUT genuinely failed.
+func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, fill *domain.Fill) (*domain.ExecutionUpdateResponse, bool, bool, error) {
+	// Read the authoritative already-applied quantity before attempting the update.
+	// quantityFilled is monotonically non-decreasing for an execution (fills are never
+	// corrected upstream), so a lower incoming quantity means the fill is stale/out of
+	// order and must be discarded rather than regressing the execution downward.
+	current, err := cs.executionClient.GetExecution(ctx, fill.ExecutionServiceID)
+	if err != nil {
+		processingError := fmt.Errorf("failed to update execution %d: %w", fill.ExecutionServiceID, err)
+		cs.metrics.RecordMessageFailed()
+		if cs.resilienceManager != nil {
+			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
+		}
+		return nil, true, false, processingError
+	}
+
+	if fill.QuantityFilled < current.QuantityFilled {
+		cs.logger.WithContext(ctx).Info("Discarding stale out-of-order fill (quantityFilled below current)",
+			zap.Int64("fill_id", fill.ID),
+			zap.Int64("execution_service_id", fill.ExecutionServiceID),
+			zap.Int64("fill_quantity_filled", fill.QuantityFilled),
+			zap.Int64("current_quantity_filled", current.QuantityFilled),
+		)
+		return nil, false, true, nil
+	}
+
 	updateResponse, err := cs.executionClient.UpdateExecutionWithRefetch(ctx, fill.ExecutionServiceID,
 		func(execution *domain.ExecutionResponse) (*domain.ExecutionUpdateRequest, error) {
 			// Business rule validation against the freshly fetched execution. A
@@ -340,10 +371,10 @@ func (cs *ConfirmationService) handleExecutionServiceCall(ctx context.Context, f
 		if cs.resilienceManager != nil {
 			_ = cs.resilienceManager.AddToDeadLetterQueue(ctx, fill, "execution-service failure", []error{err}, 1, map[string]interface{}{"service": "execution-service"})
 		}
-		return nil, true, processingError
+		return nil, true, false, processingError
 	}
 
-	return updateResponse, false, nil
+	return updateResponse, false, false, nil
 }
 
 // handleAllocationServiceCall handles the interaction with the Allocation Service

@@ -469,7 +469,7 @@ func TestValidationService_ValidateFillMessage_FormatValidation(t *testing.T) {
 				AveragePrice:       190.41,
 				Version:            1,
 			},
-			expectedError: "ticker 'ibm123' does not match expected format (1-5 uppercase letters)",
+			expectedError: "ticker 'ibm123' does not match expected format (1-6 uppercase letters, optional '.' or '-' class suffix)",
 		},
 		{
 			name: "invalid destination format",
@@ -528,6 +528,49 @@ func TestValidationService_ValidateFillMessage_FormatValidation(t *testing.T) {
 				}
 			}
 			assert.True(t, found, "Expected message not found: %s", tt.expectedError)
+		})
+	}
+}
+
+func TestValidationService_ValidateFillMessage_TickerFormatAccepted(t *testing.T) {
+	appLogger, err := logger.New(logger.Config{
+		Level:       "info",
+		Format:      "json",
+		Output:      "stdout",
+		ServiceName: "test",
+	})
+	require.NoError(t, err)
+
+	service := NewValidationService(ValidationConfig{Logger: appLogger})
+	ctx := context.Background()
+
+	// Tickers that must NOT produce a ticker INVALID_FORMAT warning.
+	validTickers := []string{"BRK.B", "BF.B", "MSFT", "CMCSA", "IBM", "BRK-B"}
+
+	for _, ticker := range validTickers {
+		t.Run(ticker, func(t *testing.T) {
+			fill := &domain.Fill{
+				ID:                 123,
+				ExecutionServiceID: 456,
+				IsOpen:             false,
+				ExecutionStatus:    "FULL",
+				TradeType:          "BUY",
+				Destination:        "ML",
+				SecurityID:         "SEC123",
+				Ticker:             ticker,
+				Quantity:           1000,
+				QuantityFilled:     1000,
+				AveragePrice:       190.41,
+				Version:            1,
+			}
+
+			result := service.ValidateFillMessage(ctx, fill)
+
+			for _, warning := range result.Warnings {
+				if warning.Field == "ticker" && warning.Code == "INVALID_FORMAT" {
+					t.Errorf("unexpected ticker INVALID_FORMAT warning for %q: %s", ticker, warning.Message)
+				}
+			}
 		})
 	}
 }

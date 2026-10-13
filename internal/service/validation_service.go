@@ -328,11 +328,12 @@ func (vs *ValidationService) validateRanges(fill *domain.Fill, result *Validatio
 
 // validateFormats validates string field formats
 func (vs *ValidationService) validateFormats(fill *domain.Fill, result *ValidationResult) {
-	// Validate ticker format (typically 1-5 uppercase letters)
-	tickerRegex := regexp.MustCompile(`^[A-Z]{1,5}$`)
+	// Validate ticker format (1-6 uppercase letters, with an optional '.' or '-'
+	// class suffix of 1-3 uppercase letters, e.g. BRK.B, BF.B).
+	tickerRegex := regexp.MustCompile(`^[A-Z]{1,6}([.\-][A-Z]{1,3})?$`)
 	if !tickerRegex.MatchString(fill.Ticker) {
 		result.addWarning("ticker", "INVALID_FORMAT",
-			fmt.Sprintf("ticker '%s' does not match expected format (1-5 uppercase letters)", fill.Ticker))
+			fmt.Sprintf("ticker '%s' does not match expected format (1-6 uppercase letters, optional '.' or '-' class suffix)", fill.Ticker))
 	}
 
 	// Validate security ID format (should be alphanumeric)
