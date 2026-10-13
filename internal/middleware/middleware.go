@@ -166,10 +166,19 @@ func RateLimiter(requestsPerSecond int) func(next http.Handler) http.Handler {
 // responseWriter wraps http.ResponseWriter to capture status code
 type responseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	wroteHeader bool
 }
 
+// WriteHeader is idempotent: only the first call is forwarded to the underlying
+// writer. This guards against a handler (or wrapper) calling WriteHeader more
+// than once, which otherwise surfaces as the stdlib "superfluous
+// response.WriteHeader call" warning.
 func (rw *responseWriter) WriteHeader(code int) {
+	if rw.wroteHeader {
+		return
+	}
+	rw.wroteHeader = true
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
 }

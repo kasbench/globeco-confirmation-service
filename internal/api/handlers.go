@@ -111,8 +111,10 @@ func (h *Handlers) LivenessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+	// Do not call WriteHeader(200) explicitly: the Encode body write below sends
+	// 200 implicitly. An explicit WriteHeader here is forwarded a second time by
+	// the otelhttp response wrapper on the body write, producing the stdlib
+	// "superfluous response.WriteHeader call" warning.
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode liveness response", zap.Error(err))
 	}
@@ -207,7 +209,12 @@ func (h *Handlers) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
+	// Only write a non-200 status explicitly. For 200, let the Encode body write
+	// send it implicitly, to avoid otelhttp forwarding a second WriteHeader (the
+	// "superfluous response.WriteHeader call" warning).
+	if statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
+	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode readiness response", zap.Error(err))
@@ -262,8 +269,8 @@ func (h *Handlers) StatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+	// No explicit WriteHeader(200): the Encode body write sends 200 implicitly,
+	// avoiding the otelhttp "superfluous response.WriteHeader call" warning.
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode stats response", zap.Error(err))
 		return
@@ -289,8 +296,8 @@ func (h *Handlers) VersionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+	// No explicit WriteHeader(200): the Encode body write sends 200 implicitly,
+	// avoiding the otelhttp "superfluous response.WriteHeader call" warning.
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode version response", zap.Error(err))
 	}
@@ -319,8 +326,8 @@ func (h *Handlers) RootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+	// No explicit WriteHeader(200): the Encode body write sends 200 implicitly,
+	// avoiding the otelhttp "superfluous response.WriteHeader call" warning.
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.WithContext(ctx).Error("Failed to encode root response", zap.Error(err))
 	}

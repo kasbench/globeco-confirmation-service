@@ -1,10 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/kasbench/globeco-confirmation-service/pkg/logger"
@@ -343,4 +347,75 @@ func TestGetStatusString(t *testing.T) {
 func TestGetEnvironment(t *testing.T) {
 	env := getEnvironment()
 	assert.Equal(t, "development", env)
+}
+
+// TestNoSuperfluousWriteHeaderWarning is a regression guard for the
+// "http: superfluous response.WriteHeader call" flood. Handlers must not call
+// w.WriteHeader(200) explicitly before writing a JSON body, because the otelhttp
+// response wrapper (wired into NewRouter) forwards a second WriteHeader on the
+// body write, which net/http logs as a superfluous call. This test drives the
+// real router (so otelhttp is in the chain) through an httptest server whose
+// ErrorLog is captured, and asserts no superfluous-WriteHeader warning is emitted
+// for the steady-state endpoints. A future "logging cleanup" that re-adds the
+// explicit WriteHeader(200) calls will fail here.
+func TestNoSuperfluousWriteHeaderWarning(t *testing.T) {
+	handlers, mockConfirmationService, mockKafkaConsumer := setupTestHandlers(t)
+
+	// Readiness exercises both dependency checks; make them healthy so it returns 200.
+	mockKafkaConsumer.On("IsHealthy", mock.Anything).Return(true)
+	mockConfirmationService.On("IsHealthy", mock.Anything).Return(true)
+	mockConfirmationService.On("GetStats").Return(map[string]interface{}{"ok": true})
+	mockKafkaConsumer.On("GetStats").Return(map[string]interface{}{"ok": true})
+
+	appLogger, err := logger.New(logger.Config{
+		Level:       "info",
+		Format:      "json",
+		Output:      "stdout",
+		ServiceName: "test",
+	})
+	require.NoError(t, err)
+	appMetrics := metrics.New(metrics.Config{Namespace: "test", Enabled: true})
+
+	router := NewRouter(RouterConfig{
+		Handlers: handlers,
+		Logger:   appLogger,
+		Metrics:  appMetrics,
+	})
+
+	// Capture the net/http server's ErrorLog, which is where the
+	// "superfluous response.WriteHeader call" warning is written.
+	var logBuf bytes.Buffer
+	var mu sync.Mutex
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+	srv.Config.ErrorLog = log.New(&safeWriter{w: &logBuf, mu: &mu}, "", 0)
+
+	paths := []string{"/health/live", "/health/ready", "/stats", "/version", "/"}
+	for _, p := range paths {
+		resp, err := http.Get(srv.URL + p)
+		require.NoError(t, err, "GET %s", p)
+		// Drain and close so the server finishes writing the response (and any
+		// ErrorLog line) before we assert.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "GET %s should be 200", p)
+	}
+
+	mu.Lock()
+	logged := logBuf.String()
+	mu.Unlock()
+	assert.NotContains(t, logged, "superfluous response.WriteHeader call",
+		"handlers must not trigger the net/http superfluous WriteHeader warning; captured log:\n%s", logged)
+}
+
+// safeWriter serializes concurrent writes from the http server's ErrorLog.
+type safeWriter struct {
+	w  *bytes.Buffer
+	mu *sync.Mutex
+}
+
+func (s *safeWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
 }
