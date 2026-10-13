@@ -26,16 +26,17 @@ type DuplicateDetectionService struct {
 
 // ProcessedMessage represents a previously processed message
 type ProcessedMessage struct {
-	FillID             int64         `json:"fillId"`
-	ExecutionServiceID int64         `json:"executionServiceId"`
-	ProcessedAt        time.Time     `json:"processedAt"`
-	CorrelationID      string        `json:"correlationId"`
-	ProcessingTime     time.Duration `json:"processingTime"`
-	Success            bool          `json:"success"`
-	ErrorMessage       string        `json:"errorMessage,omitempty"`
-	Version            int           `json:"version"`
-	QuantityFilled     int64         `json:"quantityFilled"`
-	AveragePrice       float64       `json:"averagePrice"`
+	FillID              int64         `json:"fillId"`
+	ExecutionServiceID  int64         `json:"executionServiceId"`
+	ProcessedAt         time.Time     `json:"processedAt"`
+	CorrelationID       string        `json:"correlationId"`
+	ProcessingTime      time.Duration `json:"processingTime"`
+	Success             bool          `json:"success"`
+	ErrorMessage        string        `json:"errorMessage,omitempty"`
+	Version             int           `json:"version"`
+	QuantityFilled      int64         `json:"quantityFilled"`
+	AveragePrice        float64       `json:"averagePrice"`
+	LastFilledTimestamp float64       `json:"lastFilledTimestamp"`
 }
 
 // DuplicateDetectionConfig represents the configuration for duplicate detection
@@ -101,40 +102,43 @@ func (dds *DuplicateDetectionService) CheckDuplicate(ctx context.Context, fill *
 		return result
 	}
 
-	// Message is a duplicate, determine if we should still process it
-	dds.logger.WithContext(ctx).Info("Duplicate message detected",
-		zap.Int64("fill_id", fill.ID),
-		zap.String("message_key", messageKey),
-		zap.Time("previous_processed_at", previousMessage.ProcessedAt),
-		zap.Bool("previous_success", previousMessage.Success),
-	)
-
-	// Decision logic for duplicate processing
-	if !previousMessage.Success {
-		// Previous processing failed, should retry
+	// A prior record exists for this key. Because fills for an execution id are
+	// now processed in strict delivery order, a later fill is a legitimate
+	// successive update, not a correction. Decide based on identity only.
+	switch {
+	case !previousMessage.Success:
+		// Previous processing failed; retry it. This genuinely is the same
+		// message being reprocessed, so it is still a duplicate.
+		result.IsDuplicate = true
 		result.ShouldProcess = true
 		result.Reason = "Previous processing failed, retrying"
-		dds.logger.WithContext(ctx).Info("Reprocessing failed duplicate message",
+		dds.logger.WithContext(ctx).Debug("Reprocessing failed message",
 			zap.Int64("fill_id", fill.ID),
+			zap.String("message_key", messageKey),
 			zap.String("previous_error", previousMessage.ErrorMessage),
 		)
-	} else if dds.hasSignificantChanges(fill, previousMessage) {
-		// Message has significant changes, should process as correction
+	case fill.Version != previousMessage.Version || fill.LastFilledTimestamp != previousMessage.LastFilledTimestamp:
+		// Version and/or lastFilledTimestamp advanced: this is the next update,
+		// not a duplicate. Process it as a normal update.
+		result.IsDuplicate = false
 		result.ShouldProcess = true
-		result.Reason = "Message has significant changes, processing as correction"
-		dds.logger.WithContext(ctx).Info("Processing duplicate with significant changes",
+		result.Reason = "New/updated message, processing"
+		dds.logger.WithContext(ctx).Debug("Processing updated message",
 			zap.Int64("fill_id", fill.ID),
-			zap.Int64("previous_quantity", previousMessage.QuantityFilled),
-			zap.Int64("current_quantity", fill.QuantityFilled),
-			zap.Float64("previous_price", previousMessage.AveragePrice),
-			zap.Float64("current_price", fill.AveragePrice),
+			zap.String("message_key", messageKey),
+			zap.Int("previous_version", previousMessage.Version),
+			zap.Int("current_version", fill.Version),
+			zap.Float64("previous_last_filled_timestamp", previousMessage.LastFilledTimestamp),
+			zap.Float64("current_last_filled_timestamp", fill.LastFilledTimestamp),
 		)
-	} else {
-		// Exact duplicate, skip processing
+	default:
+		// Version and lastFilledTimestamp both unchanged: exact duplicate, skip.
+		result.IsDuplicate = true
 		result.ShouldProcess = false
-		result.Reason = "Exact duplicate, skipping processing (idempotent operation)"
-		dds.logger.WithContext(ctx).Info("Skipping exact duplicate message",
+		result.Reason = "Exact duplicate (version and lastFilledTimestamp unchanged), skipping"
+		dds.logger.WithContext(ctx).Debug("Skipping exact duplicate message",
 			zap.Int64("fill_id", fill.ID),
+			zap.String("message_key", messageKey),
 			zap.Duration("time_since_processed", time.Since(previousMessage.ProcessedAt)),
 		)
 	}
@@ -148,16 +152,17 @@ func (dds *DuplicateDetectionService) RecordProcessedMessage(ctx context.Context
 	correlationID := logger.GetCorrelationID(ctx)
 
 	processedMessage := &ProcessedMessage{
-		FillID:             fill.ID,
-		ExecutionServiceID: fill.ExecutionServiceID,
-		ProcessedAt:        time.Now(),
-		CorrelationID:      correlationID,
-		ProcessingTime:     processingTime,
-		Success:            success,
-		ErrorMessage:       errorMessage,
-		Version:            fill.Version,
-		QuantityFilled:     fill.QuantityFilled,
-		AveragePrice:       fill.AveragePrice,
+		FillID:              fill.ID,
+		ExecutionServiceID:  fill.ExecutionServiceID,
+		ProcessedAt:         time.Now(),
+		CorrelationID:       correlationID,
+		ProcessingTime:      processingTime,
+		Success:             success,
+		ErrorMessage:        errorMessage,
+		Version:             fill.Version,
+		QuantityFilled:      fill.QuantityFilled,
+		AveragePrice:        fill.AveragePrice,
+		LastFilledTimestamp: fill.LastFilledTimestamp,
 	}
 
 	dds.mutex.Lock()
@@ -234,33 +239,6 @@ func (dds *DuplicateDetectionService) generateMessageKey(fill *domain.Fill) stri
 	// Use fill ID and execution service ID to create a unique key
 	// This allows for the same fill ID to be processed for different executions
 	return fmt.Sprintf("fill_%d_exec_%d", fill.ID, fill.ExecutionServiceID)
-}
-
-// hasSignificantChanges determines if a duplicate message has significant changes
-func (dds *DuplicateDetectionService) hasSignificantChanges(current *domain.Fill, previous *ProcessedMessage) bool {
-	// Check for significant changes in key fields
-
-	// Quantity filled changed
-	if current.QuantityFilled != previous.QuantityFilled {
-		return true
-	}
-
-	// Average price changed significantly (more than 0.1%)
-	priceDiff := current.AveragePrice - previous.AveragePrice
-	if priceDiff < 0 {
-		priceDiff = -priceDiff
-	}
-	priceChangePercent := (priceDiff / previous.AveragePrice) * 100
-	if priceChangePercent > 0.1 {
-		return true
-	}
-
-	// Version changed (indicates an update)
-	if current.Version != previous.Version {
-		return true
-	}
-
-	return false
 }
 
 // cleanupLoop runs in the background to clean up old entries

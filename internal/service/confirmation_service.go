@@ -178,12 +178,6 @@ func (cs *ConfirmationService) checkForDuplicates(ctx context.Context, fill *dom
 		if duplicateResult.IsDuplicate && !duplicateResult.ShouldProcess {
 			return true, duplicateResult.Reason
 		}
-		if duplicateResult.IsDuplicate {
-			cs.logger.WithContext(ctx).Info("Processing duplicate message with changes",
-				zap.Int64("fill_id", fill.ID),
-				zap.String("reason", duplicateResult.Reason),
-			)
-		}
 	}
 	return false, ""
 }

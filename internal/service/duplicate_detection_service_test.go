@@ -81,11 +81,12 @@ func TestDuplicateDetectionService_CheckDuplicate_NewMessage(t *testing.T) {
 
 	ctx := context.Background()
 	fill := &domain.Fill{
-		ID:                 123,
-		ExecutionServiceID: 456,
-		QuantityFilled:     1000,
-		AveragePrice:       190.41,
-		Version:            1,
+		ID:                  123,
+		ExecutionServiceID:  456,
+		QuantityFilled:      1000,
+		AveragePrice:        190.41,
+		Version:             1,
+		LastFilledTimestamp: 3.0,
 	}
 
 	result := service.CheckDuplicate(ctx, fill)
@@ -114,23 +115,24 @@ func TestDuplicateDetectionService_CheckDuplicate_ExactDuplicate(t *testing.T) {
 
 	ctx := context.Background()
 	fill := &domain.Fill{
-		ID:                 123,
-		ExecutionServiceID: 456,
-		QuantityFilled:     1000,
-		AveragePrice:       190.41,
-		Version:            1,
+		ID:                  123,
+		ExecutionServiceID:  456,
+		QuantityFilled:      1000,
+		AveragePrice:        190.41,
+		Version:             1,
+		LastFilledTimestamp: 3.0,
 	}
 
 	// Record the message as processed successfully
 	service.RecordProcessedMessage(ctx, fill, true, time.Millisecond*100, "")
 
-	// Check for duplicate
+	// Check for duplicate with identical version AND lastFilledTimestamp
 	result := service.CheckDuplicate(ctx, fill)
 
 	assert.True(t, result.IsDuplicate)
 	assert.NotNil(t, result.PreviousMessage)
 	assert.False(t, result.ShouldProcess) // Should not process exact duplicate
-	assert.Equal(t, "Exact duplicate, skipping processing (idempotent operation)", result.Reason)
+	assert.Equal(t, "Exact duplicate (version and lastFilledTimestamp unchanged), skipping", result.Reason)
 }
 
 func TestDuplicateDetectionService_CheckDuplicate_FailedPrevious(t *testing.T) {
@@ -151,11 +153,12 @@ func TestDuplicateDetectionService_CheckDuplicate_FailedPrevious(t *testing.T) {
 
 	ctx := context.Background()
 	fill := &domain.Fill{
-		ID:                 123,
-		ExecutionServiceID: 456,
-		QuantityFilled:     1000,
-		AveragePrice:       190.41,
-		Version:            1,
+		ID:                  123,
+		ExecutionServiceID:  456,
+		QuantityFilled:      1000,
+		AveragePrice:        190.41,
+		Version:             1,
+		LastFilledTimestamp: 3.0,
 	}
 
 	// Record the message as processed with failure
@@ -170,7 +173,7 @@ func TestDuplicateDetectionService_CheckDuplicate_FailedPrevious(t *testing.T) {
 	assert.Equal(t, "Previous processing failed, retrying", result.Reason)
 }
 
-func TestDuplicateDetectionService_CheckDuplicate_SignificantChanges(t *testing.T) {
+func TestDuplicateDetectionService_CheckDuplicate_UpdatedMessage(t *testing.T) {
 	appLogger, err := logger.New(logger.Config{
 		Level:       "info",
 		Format:      "json",
@@ -179,41 +182,78 @@ func TestDuplicateDetectionService_CheckDuplicate_SignificantChanges(t *testing.
 	})
 	require.NoError(t, err)
 
-	service := NewDuplicateDetectionService(DuplicateDetectionConfig{
-		Logger:          appLogger,
-		RetentionPeriod: time.Hour,
-		MaxEntries:      1000,
-	})
-	defer service.Stop()
-
-	ctx := context.Background()
-	originalFill := &domain.Fill{
-		ID:                 123,
-		ExecutionServiceID: 456,
-		QuantityFilled:     500,
-		AveragePrice:       190.41,
-		Version:            1,
+	tests := []struct {
+		name        string
+		updatedFill *domain.Fill
+	}{
+		{
+			name: "higher version only",
+			updatedFill: &domain.Fill{
+				ID:                  123,
+				ExecutionServiceID:  456,
+				QuantityFilled:      1000,
+				AveragePrice:        190.41,
+				Version:             2,
+				LastFilledTimestamp: 3.0,
+			},
+		},
+		{
+			name: "later lastFilledTimestamp only",
+			updatedFill: &domain.Fill{
+				ID:                  123,
+				ExecutionServiceID:  456,
+				QuantityFilled:      1000,
+				AveragePrice:        190.41,
+				Version:             1,
+				LastFilledTimestamp: 4.0,
+			},
+		},
+		{
+			name: "both version and lastFilledTimestamp advanced",
+			updatedFill: &domain.Fill{
+				ID:                  123,
+				ExecutionServiceID:  456,
+				QuantityFilled:      2000,
+				AveragePrice:        191.00,
+				Version:             2,
+				LastFilledTimestamp: 4.0,
+			},
+		},
 	}
 
-	// Record the original message as processed successfully
-	service.RecordProcessedMessage(ctx, originalFill, true, time.Millisecond*100, "")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewDuplicateDetectionService(DuplicateDetectionConfig{
+				Logger:          appLogger,
+				RetentionPeriod: time.Hour,
+				MaxEntries:      1000,
+			})
+			defer service.Stop()
 
-	// Create a message with significant changes
-	updatedFill := &domain.Fill{
-		ID:                 123,
-		ExecutionServiceID: 456,
-		QuantityFilled:     1000, // Changed quantity
-		AveragePrice:       190.41,
-		Version:            1,
+			ctx := context.Background()
+			originalFill := &domain.Fill{
+				ID:                  123,
+				ExecutionServiceID:  456,
+				QuantityFilled:      500,
+				AveragePrice:        190.41,
+				Version:             1,
+				LastFilledTimestamp: 3.0,
+			}
+
+			// Record the original message as processed successfully
+			service.RecordProcessedMessage(ctx, originalFill, true, time.Millisecond*100, "")
+
+			// Check the updated message
+			result := service.CheckDuplicate(ctx, tt.updatedFill)
+
+			assert.False(t, result.IsDuplicate) // An update is NOT a duplicate
+			assert.NotNil(t, result.PreviousMessage)
+			assert.True(t, result.ShouldProcess) // Should process as a normal update
+			assert.Equal(t, "New/updated message, processing", result.Reason)
+			assert.NotContains(t, result.Reason, "significant")
+			assert.NotContains(t, result.Reason, "correction")
+		})
 	}
-
-	// Check for duplicate
-	result := service.CheckDuplicate(ctx, updatedFill)
-
-	assert.True(t, result.IsDuplicate)
-	assert.NotNil(t, result.PreviousMessage)
-	assert.True(t, result.ShouldProcess) // Should process due to significant changes
-	assert.Equal(t, "Message has significant changes, processing as correction", result.Reason)
 }
 
 func TestDuplicateDetectionService_RecordProcessedMessage(t *testing.T) {
@@ -234,11 +274,12 @@ func TestDuplicateDetectionService_RecordProcessedMessage(t *testing.T) {
 
 	ctx := logger.WithCorrelationIDContext(context.Background(), "test-correlation-id")
 	fill := &domain.Fill{
-		ID:                 123,
-		ExecutionServiceID: 456,
-		QuantityFilled:     1000,
-		AveragePrice:       190.41,
-		Version:            1,
+		ID:                  123,
+		ExecutionServiceID:  456,
+		QuantityFilled:      1000,
+		AveragePrice:        190.41,
+		Version:             1,
+		LastFilledTimestamp: 3.0,
 	}
 
 	processingTime := time.Millisecond * 150
@@ -264,6 +305,7 @@ func TestDuplicateDetectionService_RecordProcessedMessage(t *testing.T) {
 	assert.Equal(t, fill.Version, processedMessage.Version)
 	assert.Equal(t, fill.QuantityFilled, processedMessage.QuantityFilled)
 	assert.Equal(t, fill.AveragePrice, processedMessage.AveragePrice)
+	assert.Equal(t, fill.LastFilledTimestamp, processedMessage.LastFilledTimestamp)
 
 	// Record failed processing
 	service.RecordProcessedMessage(ctx, fill, false, processingTime, errorMessage)
@@ -371,86 +413,6 @@ func TestDuplicateDetectionService_generateMessageKey(t *testing.T) {
 	expected := "fill_123_exec_456"
 
 	assert.Equal(t, expected, key)
-}
-
-func TestDuplicateDetectionService_hasSignificantChanges(t *testing.T) {
-	appLogger, err := logger.New(logger.Config{
-		Level:       "info",
-		Format:      "json",
-		Output:      "stdout",
-		ServiceName: "test",
-	})
-	require.NoError(t, err)
-
-	service := NewDuplicateDetectionService(DuplicateDetectionConfig{
-		Logger: appLogger,
-	})
-	defer service.Stop()
-
-	previous := &ProcessedMessage{
-		QuantityFilled: 1000,
-		AveragePrice:   100.0,
-		Version:        1,
-	}
-
-	tests := []struct {
-		name     string
-		current  *domain.Fill
-		expected bool
-	}{
-		{
-			name: "no changes",
-			current: &domain.Fill{
-				QuantityFilled: 1000,
-				AveragePrice:   100.0,
-				Version:        1,
-			},
-			expected: false,
-		},
-		{
-			name: "quantity changed",
-			current: &domain.Fill{
-				QuantityFilled: 1500,
-				AveragePrice:   100.0,
-				Version:        1,
-			},
-			expected: true,
-		},
-		{
-			name: "price changed significantly",
-			current: &domain.Fill{
-				QuantityFilled: 1000,
-				AveragePrice:   101.0, // 1% change
-				Version:        1,
-			},
-			expected: true,
-		},
-		{
-			name: "price changed slightly",
-			current: &domain.Fill{
-				QuantityFilled: 1000,
-				AveragePrice:   100.05, // 0.05% change
-				Version:        1,
-			},
-			expected: false,
-		},
-		{
-			name: "version changed",
-			current: &domain.Fill{
-				QuantityFilled: 1000,
-				AveragePrice:   100.0,
-				Version:        2,
-			},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := service.hasSignificantChanges(tt.current, previous)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
 }
 
 func TestDuplicateDetectionService_MaxEntriesCleanup(t *testing.T) {
