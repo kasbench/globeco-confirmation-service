@@ -30,6 +30,14 @@ spec:
         - name: wait-for-kafka
           image: busybox:1.36
           command: ['sh', '-c', 'until nc -z globeco-execution-service-kafka 9092; do echo "Waiting for Kafka..."; sleep 2; done']
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+
       containers:
         - name: globeco-confirmation-service
           image: kasbench/globeco-confirmation-service:1.0.11
